@@ -8,7 +8,8 @@
 #include "include/cef_client.h"
 #include "include/wrapper/cef_message_router.h"
 
-#include <QQueue>
+#include <deque>
+#include <map>
 #include <QHash>
 #include <QRect>
 #include <QJsonObject>
@@ -143,7 +144,7 @@ private:
     CefRefPtr<CefMessageRouterBrowserSide::Callback> signalCallback;
     bool firstLoadFinished = false;
   };
-  QHash<int, BrowserInfo> m_browsers;
+  std::map<int, BrowserInfo> m_browsers;
 
   CefRefPtr<CefMessageRouterBrowserSide> m_messageRouter;
   // NOTE: using QHash prevents a strange ABI issue discussed here: http://www.magpcss.org/ceforum/viewtopic.php?f=6&t=13543
@@ -176,7 +177,7 @@ private:
   QMultiHash<int32, CefRefPtr<CefMessageRouterBrowserSide::Callback>> m_waitForDownloadCallbacks;
 
   // maps the requested popup url to the parent browser id
-  QQueue<uint> m_popupToParentMapping;
+  std::deque<uint> m_popupToParentMapping;
 
   // Include the default reference counting implementation.
   IMPLEMENT_REFCOUNTING(PhantomJSHandler);

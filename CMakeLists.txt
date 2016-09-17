@@ -128,6 +128,7 @@ if (OS_LINUX)
       # FIXME: cleanup
       pcre16
       icui18n icuuc
+      stdc++fs
     )
 
     add_definitions("-DIMPORT_STATIC_QT_PLUGIN")
