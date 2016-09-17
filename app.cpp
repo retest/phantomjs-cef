@@ -191,32 +191,7 @@ bool copyRecursively(const std::string& srcFilePath, const std::string& tgtFileP
     else
       return true;
   }
-  
-  
-  /*
-  QFileInfo srcFileInfo(srcFilePath);
-  if (srcFileInfo.isDir()) {
-    if (!QDir().mkpath(tgtFilePath)) {
-      return false;
-    }
 
-    QDir sourceDir(srcFilePath);
-    QDir::Filters sourceDirFilter = QDir::NoDotAndDotDot | QDir::AllEntries | QDir::NoSymLinks | QDir::Hidden;
-    foreach (const QFileInfo& entry, sourceDir.entryInfoList(sourceDirFilter, QDir::DirsFirst)) {
-      const QString destination = tgtFilePath + '/' + entry.fileName();
-      if (!copyRecursively(entry.absoluteFilePath(), destination)) {
-        return false;
-      }
-    }
-    return true;
-  } else {
-    QFileInfo tgtFileInfo(tgtFilePath);
-    QFileInfo srcFileInfo(srcFilePath);
-    if (tgtFileInfo.isDir()){
-      return copyRecursively(srcFilePath, tgtFilePath + '/' + srcFileInfo.fileName());
-    }
-    return QFile::copy(srcFilePath, tgtFilePath);
-  }*/
 }
 
 class V8Handler : public CefV8Handler
