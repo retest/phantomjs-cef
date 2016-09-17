@@ -4,13 +4,18 @@
 
 #include "app.h"
 
-#include <QDir>
-#include <QFile>
-#include <QDateTime>
+#include <experimental/filesystem>
+#include <system_error>
+
 
 #include <string>
 #include <iostream>
 #include <fstream>
+#include <streambuf>
+#include <chrono>
+#include <ctime>
+#include <vector>
+#include <algorithm>
 
 #include "handler.h"
 #include "print_handler.h"
@@ -20,6 +25,8 @@
 #include "include/cef_command_line.h"
 #include "include/wrapper/cef_helpers.h"
 #include "include/wrapper/cef_closure_task.h"
+
+namespace fs = std::experimental::filesystem;
 
 PhantomJSApp::PhantomJSApp()
   : m_printHandler(new PrintHandler)
@@ -53,8 +60,10 @@ void PhantomJSApp::OnContextInitialized()
   auto command_line = CefCommandLine::GetGlobalCommandLine();
   CefCommandLine::ArgumentList arguments;
   command_line->GetArguments(arguments);
-  auto scriptFileInfo = QFileInfo(QString::fromStdString(arguments.front()));
-  const auto scriptPath = scriptFileInfo.absoluteFilePath().toStdString();
+  
+  fs::path scriptFileInfo=arguments.front().ToString();
+  
+  const auto scriptPath = fs::absolute(scriptFileInfo).string();
 
   // now inject user provided js file and some meta data such as cli arguments
   // which are otherwise not available on the renderer process
@@ -71,7 +80,7 @@ void PhantomJSApp::OnContextInitialized()
   }
   content << "];\n";
   // default initialize the library path to the folder of the script that will be executed
-  content << "phantom.libraryPath = \"" << scriptFileInfo.absolutePath().toStdString() << "\";\n";
+  content << "phantom.libraryPath = \"" << scriptPath << "\";\n";
   content <<"</script>\n";
   // then load the actual script
   content << "<script type=\"text/javascript\" src=\"file://" << scriptPath << "\" onerror=\"phantom.internal.onScriptLoadError();\"></script>\n";
@@ -86,14 +95,24 @@ CefRefPtr<CefPrintHandler> PhantomJSApp::GetPrintHandler()
 
 namespace {
 
-std::string findLibrary(const QString& filePath, const QString& libraryPath)
+std::string findLibrary(const std::string& filePath, const std::string& libraryPath)
 {
-  for (const auto& path : {QDir::currentPath(), libraryPath}) {
-    QFileInfo info(path + '/' + filePath);
-    if (!info.isFile() || !info.isReadable()) {
+  
+  //
+  fs::path currentPath = fs::current_path();
+  fs::path libPath = libraryPath;
+  
+  
+  
+  for (const auto& pt : {currentPath, libPath}) {
+    fs::path tmp_path = pt;
+    tmp_path+="/";
+    tmp_path+=filePath;
+    
+    if (!is_regular_file(tmp_path)) {
       continue;
     }
-    return info.absoluteFilePath().toStdString();
+    return tmp_path.string();
   }
   return {};
 }
@@ -132,19 +151,49 @@ bool writeFile(const std::string& filePath, const std::string& contents, const s
   return false;
 }
 
-bool remove(const QString& path)
+bool remove(const std::string& path)
 {
-  QFileInfo info(path);
-  if (info.isDir()){
-    QDir dir(path);
-    return dir.removeRecursively();
+  
+  fs::path info = path;
+  if(is_directory(info))
+  {
+    return (fs::remove_all(info) ==0 ) ? true : false; 
   }
-  QFile f(path);
-  return f.remove();
+  return (fs::remove(info) ==0 ) ? true : false; 
+  
 }
 
-bool copyRecursively(const QString &srcFilePath, const QString &tgtFilePath)
+bool copyRecursively(const std::string& srcFilePath, const std::string& tgtFilePath)
 {
+  
+  fs::path srcFileInfo = srcFilePath;
+  fs::path tgtFileInfo = tgtFilePath;
+  if( fs::is_directory(srcFileInfo))
+  {
+    if(fs::exists(tgtFileInfo))
+      return false;
+    
+    fs::create_directory(tgtFileInfo);
+    std::error_code rc;
+    fs::copy(srcFileInfo,tgtFileInfo,fs::copy_options::recursive | fs::copy_options::skip_symlinks,rc);
+    if((bool)rc == true)
+      return false;
+    else
+      return true;
+    
+  }
+  else
+  {
+    std::error_code rc;
+    fs::copy(srcFileInfo,tgtFileInfo,fs::copy_options::recursive | fs::copy_options::skip_symlinks,rc);
+    if((bool)rc == true)
+      return false;
+    else
+      return true;
+  }
+  
+  
+  /*
   QFileInfo srcFileInfo(srcFilePath);
   if (srcFileInfo.isDir()) {
     if (!QDir().mkpath(tgtFilePath)) {
@@ -167,7 +216,7 @@ bool copyRecursively(const QString &srcFilePath, const QString &tgtFilePath)
       return copyRecursively(srcFilePath, tgtFilePath + '/' + srcFileInfo.fileName());
     }
     return QFile::copy(srcFilePath, tgtFilePath);
-  }
+  }*/
 }
 
 class V8Handler : public CefV8Handler
@@ -191,8 +240,8 @@ public:
       std::cerr << arguments.at(0)->GetStringValue() << '\n';
       return true;
     } else if (name == "findLibrary") {
-      const auto filePath = QString::fromStdString(arguments.at(0)->GetStringValue());
-      const auto libraryPath = QString::fromStdString(arguments.at(1)->GetStringValue());
+      const auto filePath =arguments.at(0)->GetStringValue();
+      const auto libraryPath =arguments.at(1)->GetStringValue();
       retval = CefV8Value::CreateString(findLibrary(filePath, libraryPath));
       return true;
     } else if (name == "executeJavaScript") {
@@ -212,59 +261,84 @@ public:
       return true;
     } else if (name == "touch"){
       const auto filename = arguments.at(0)->GetStringValue();
-      QFile f(QString::fromStdString(filename.ToString()));
-      retval = CefV8Value::CreateBool(!f.open(QFile::WriteOnly));
+      std::fstream fileopner;
+      fileopner.open(filename);
+      if(fileopner.is_open())
+        retval = CefV8Value::CreateBool(true);
+      else
+        retval = CefV8Value::CreateBool(false);
       return true;
     } else if (name == "makeDirectory"){
-      const auto path = arguments.at(0)->GetStringValue();
-      retval = CefV8Value::CreateBool(QDir().mkdir(QString::fromStdString(path.ToString())));
+      const auto path = arguments.at(0)->GetStringValue().ToString();
+      retval = CefV8Value::CreateBool(fs::create_directory(path));
       return true;
     } else if (name == "makeTree"){
-      const auto path = arguments.at(0)->GetStringValue();
-      retval = CefV8Value::CreateBool(QDir().mkpath(QString::fromStdString(path.ToString())));
+      const auto path = arguments.at(0)->GetStringValue().ToString();
+       retval = CefV8Value::CreateBool(fs::create_directory(path));
       return true;
     } else if (name == "tempPath"){
-      retval = CefV8Value::CreateString(QDir::tempPath().toStdString());
+      auto pp = fs::temp_directory_path();
+      retval = CefV8Value::CreateString(pp.string());
       return true;
     } else if (name == "lastModified") {
-      const auto filename = arguments.at(0)->GetStringValue();
-      auto lastModified = QFileInfo(QString::fromStdString(filename.ToString())).lastModified();
-      retval = CefV8Value::CreateString(lastModified.toUTC().toString(Qt::ISODate).toStdString());
+      const auto filename = arguments.at(0)->GetStringValue().ToString();
+      fs::path filepath = filename;
+      auto ftime = fs::last_write_time(filepath);
+      std::time_t cftime = decltype(ftime)::clock::to_time_t(ftime);
+      
+      retval = CefV8Value::CreateString(std::string(std::ctime(&cftime)));
       return true;
     } else if (name == "exists") {
       const auto filename = arguments.at(0)->GetStringValue();
-      retval = CefV8Value::CreateBool(QFile::exists(QString::fromStdString(filename.ToString())));
+      fs::path filepath= filename.ToString();
+      retval = CefV8Value::CreateBool(fs::exists(filepath));
       return true;
     } else if (name == "isFile") {
       const auto filename = arguments.at(0)->GetStringValue();
-      retval = CefV8Value::CreateBool(QFileInfo(QString::fromStdString(filename.ToString())).isFile());
+      fs::path filepath=filename.ToString();
+      retval = CefV8Value::CreateBool(fs::is_regular_file(filepath));
       return true;
     } else if (name == "isDirectory") {
       const auto filename = arguments.at(0)->GetStringValue();
-      retval = CefV8Value::CreateBool(QFileInfo(QString::fromStdString(filename.ToString())).isDir());
+      fs::path filepath = filename.ToString();
+      retval = CefV8Value::CreateBool(fs::is_directory(filepath));
       return true;
     } else if (name == "copy") {
       const auto src = arguments.at(0)->GetStringValue();
       const auto dest = arguments.at(1)->GetStringValue();
-      bool r = copyRecursively(QString::fromStdString(src), QString::fromStdString(dest));
+      bool r = copyRecursively(src, dest);
       retval = CefV8Value::CreateBool(r);
       return true;
     } else if (name == "remove") {
       const auto src = arguments.at(0)->GetStringValue();
-      bool r = remove(QString::fromStdString(src));
+      bool r = remove(src);
       retval = CefV8Value::CreateBool(r);
       return true;
     } else if (name == "size") {
       const auto filename = arguments.at(0)->GetStringValue();
-      retval = CefV8Value::CreateInt(QFileInfo(QString::fromStdString(filename.ToString())).size());
+      fs::path filepath = filename.ToString();
+      retval = CefV8Value::CreateInt(fs::file_size(filepath));
       return true;
     } else if (name == "list") {
       const auto path = arguments.at(0)->GetStringValue();
-      const auto entries = QDir(QString::fromStdString(path)).entryList();
-      CefRefPtr<CefV8Value> arr = CefV8Value::CreateArray(entries.size());
-      for (int n = 0; n < entries.size(); n++) {
-        arr->SetValue(n, CefV8Value::CreateString(entries.at(n).toStdString()));
+      
+      fs::path dirpath = path.ToString();
+      //get entry numbers
+      int entrySize = 0;
+      for(auto& p: fs::directory_iterator(dirpath))
+      {
+        (void)p;
+        entrySize++;
       }
+      
+      CefRefPtr<CefV8Value> arr = CefV8Value::CreateArray(entrySize);
+      int n =0;
+      for(auto& p: fs::directory_iterator(dirpath))
+      {
+          arr->SetValue(n, CefV8Value::CreateString(p.path().string()));
+          n++;
+      }
+      
       retval = arr;
       return true;
     }
@@ -280,21 +354,42 @@ void PhantomJSApp::OnWebKitInitialized()
 {
   CefRefPtr<CefV8Handler> handler = new V8Handler();
 
-  const auto modules = QDir(":/phantomjs/modules").entryInfoList(QDir::NoFilter, QDir::Name);
-  if (modules.isEmpty()) {
-    qFatal("No modules found. This is a setup issue with the resource system - try to run CMake again.");
-  }
-  foreach (const auto& module, modules) {
-    QFile file(module.absoluteFilePath());
-    file.open(QIODevice::ReadOnly | QIODevice::Text);
-    const auto extensionCode = file.readAll();
-    if (extensionCode.isEmpty()) {
-      qFatal("Module \"%s\" is empty. This is a setup issue with the resource system - try to run CMake again.", qPrintable(module.absoluteFilePath()));
-    }
-    CefRegisterExtension(file.fileName().toStdString(), std::string(extensionCode.constData(), extensionCode.size()), handler);
-  }
-}
+  //TODO(ayoub): use compiled resources bundled  into binary instead of looking up file from disk
 
+  fs::path modules = "./modules";
+  if(!fs::exists(modules))
+  {
+    std::cerr << "No modules found. This is a setup issue with the resource system - try to run CMake again." << std::endl; 
+    exit(1);
+  }
+  
+  std::vector<fs::path>  pathListes;
+  
+  for(const auto& module : fs::directory_iterator(modules))
+  {
+    pathListes.push_back(module.path()); 
+  }
+  
+  std::sort(pathListes.begin(),pathListes.end());
+  
+
+  for(const auto& module : pathListes)
+   {
+     std::string modulepath = fs::absolute(module).string();
+     if(fs::file_size(module) == 0)
+     {
+       std::cerr << "Module "  << modulepath << " is empty. This is a setup issue with the resource system - try to run CMake again." << std::endl;
+       exit(1);
+     }
+      std::ifstream fstm(modulepath);
+      std::string content((std::istreambuf_iterator<char>(fstm)),
+                 std::istreambuf_iterator<char>());
+      
+     CefRegisterExtension(module.filename().string(), content, handler);
+      
+   }
+
+}
 void PhantomJSApp::OnContextCreated(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
                                     CefRefPtr<CefV8Context> context)
 {
