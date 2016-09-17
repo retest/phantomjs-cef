@@ -10,7 +10,6 @@
 
 #include <deque>
 #include <map>
-#include <QHash>
 #include <QRect>
 #include <QJsonObject>
 
@@ -131,7 +130,7 @@ class PhantomJSHandler : public CefClient,
 
 private:
   bool canEmitSignal(const CefRefPtr<CefBrowser>& browser) const;
-  void emitSignal(const CefRefPtr<CefBrowser>& browser, const QString& signal,
+  void emitSignal(const CefRefPtr<CefBrowser>& browser, const std::string& signal,
                   const QJsonArray& arguments, bool internal = false);
   void handleLoadEnd(CefRefPtr<CefBrowser> browser, int statusCode, const CefString& url, bool success);
 
@@ -148,33 +147,33 @@ private:
 
   CefRefPtr<CefMessageRouterBrowserSide> m_messageRouter;
   // NOTE: using QHash prevents a strange ABI issue discussed here: http://www.magpcss.org/ceforum/viewtopic.php?f=6&t=13543
-  QMultiHash<int32, CefRefPtr<CefMessageRouterBrowserSide::Callback>> m_waitForLoadedCallbacks;
-  QHash<int64, CefRefPtr<CefMessageRouterBrowserSide::Callback>> m_pendingQueryCallbacks;
-  QHash<int32, QPair<int, int>> m_viewRects;
+  std::multimap<int32, CefRefPtr<CefMessageRouterBrowserSide::Callback>> m_waitForLoadedCallbacks;
+  std::map<int64, CefRefPtr<CefMessageRouterBrowserSide::Callback>> m_pendingQueryCallbacks;
+  std::map<int32, std::pair<int, int>> m_viewRects;
   struct PaintInfo
   {
-    QString path;
-    QString format;
+    std::string path;
+    std::string format;
     QRect clipRect;
     CefRefPtr<CefMessageRouterBrowserSide::Callback> callback;
   };
-  QHash<int32, PaintInfo> m_paintCallbacks;
+  std::map<int32, PaintInfo> m_paintCallbacks;
   struct RequestInfo
   {
     CefRefPtr<CefRequest> request;
     CefRefPtr<CefRequestCallback> callback;
   };
-  QHash<uint64, RequestInfo> m_requestCallbacks;
+  std::map<uint64, RequestInfo> m_requestCallbacks;
   struct DownloadTargetInfo
   {
-    QString target;
+    std::string target;
     CefRefPtr<CefMessageRouterBrowserSide::Callback> callback;
   };
-  QHash<QString, DownloadTargetInfo> m_downloadTargets;
-  QHash<uint, CefRefPtr<CefBeforeDownloadCallback>> m_beforeDownloadCallbacks;
-  QHash<uint, CefRefPtr<CefDownloadItemCallback>> m_downloadItemCallbacks;
-  QHash<uint, CefRefPtr<CefMessageRouterBrowserSide::Callback>> m_downloadCallbacks;
-  QMultiHash<int32, CefRefPtr<CefMessageRouterBrowserSide::Callback>> m_waitForDownloadCallbacks;
+  std::map<std::string, DownloadTargetInfo> m_downloadTargets;
+  std::map<uint, CefRefPtr<CefBeforeDownloadCallback>> m_beforeDownloadCallbacks;
+  std::map<uint, CefRefPtr<CefDownloadItemCallback>> m_downloadItemCallbacks;
+  std::map<uint, CefRefPtr<CefMessageRouterBrowserSide::Callback>> m_downloadCallbacks;
+  std::multimap<int32, CefRefPtr<CefMessageRouterBrowserSide::Callback>> m_waitForDownloadCallbacks;
 
   // maps the requested popup url to the parent browser id
   std::deque<uint> m_popupToParentMapping;

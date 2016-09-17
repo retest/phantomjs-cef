@@ -46,11 +46,11 @@ bool isMain(const CefRefPtr<CefFrame>& frame)
 }
 
 template<typename T, typename K>
-T takeCallback(QHash<K, T>* callbacks, K key)
+T takeCallback(std::map<K, T>* callbacks, K key)
 {
   auto it = callbacks->find(key);
   if (it != callbacks->end()) {
-    auto ret = it.value();
+    auto ret = it->second;
     callbacks->erase(it);
     return ret;
   }
@@ -58,10 +58,30 @@ T takeCallback(QHash<K, T>* callbacks, K key)
 }
 
 template<typename T>
-T takeCallback(QHash<int32, T>* callbacks, const CefRefPtr<CefBrowser>& browser)
+T takeCallback(std::map<int32, T>* callbacks, const CefRefPtr<CefBrowser>& browser)
 {
   return takeCallback(callbacks, browser->GetIdentifier());
 }
+
+template<typename T, typename K>
+T takeCallback(std::multimap<K, T>* callbacks, K key)
+{
+  auto it = callbacks->find(key);
+  if (it != callbacks->end()) {
+    auto ret = it->second;
+    callbacks->erase(it);
+    return ret;
+  }
+  return {};
+}
+
+template<typename T>
+T takeCallback(std::multimap<int32, T>* callbacks, const CefRefPtr<CefBrowser>& browser)
+{
+  return takeCallback(callbacks, browser->GetIdentifier());
+}
+
+
 
 void initWindowInfo(CefWindowInfo& window_info, bool isPhantomMain)
 {
@@ -237,7 +257,7 @@ bool PhantomJSHandler::OnConsoleMessage(CefRefPtr<CefBrowser> browser, const Cef
     auto shortSource = QFileInfo(QString::fromStdString(source)).fileName().toStdString();
     QMessageLogger(shortSource.c_str(), line, 0).debug() << message;
   } else {
-    emitSignal(browser, QStringLiteral("onConsoleMessage"),
+    emitSignal(browser, std::string("onConsoleMessage"),
         {QString::fromStdString(message), QString::fromStdString(source), line});
   }
   return true;
@@ -259,7 +279,7 @@ void PhantomJSHandler::OnAfterCreated(CefRefPtr<CefBrowser> browser)
     //m_popupToParentMapping.pop_front();
     // we don't open about:blank for popups
     browserInfo.firstLoadFinished = true;
-    emitSignal(m_browsers.at(parentBrowser).browser, QStringLiteral("onPopupCreated"),
+    emitSignal(m_browsers.at(parentBrowser).browser, std::string("onPopupCreated"),
                {browser->GetIdentifier()}, true);
   }
 
@@ -355,10 +375,10 @@ void PhantomJSHandler::OnLoadStart(CefRefPtr<CefBrowser> browser, CefRefPtr<CefF
     return;
   }
 
-  emitSignal(browser, QStringLiteral("onLoadStarted"), {QString::fromStdString(frame->GetURL())});
+  emitSignal(browser, std::string("onLoadStarted"), {QString::fromStdString(frame->GetURL())});
 }
 
-void PhantomJSHandler::emitSignal(const CefRefPtr<CefBrowser>& browser, const QString& signal,
+void PhantomJSHandler::emitSignal(const CefRefPtr<CefBrowser>& browser, const std::string& signal,
                                   const QJsonArray& arguments, bool internal)
 {
  if ( m_browsers.find(browser->GetIdentifier()) == m_browsers.end() )
@@ -367,11 +387,11 @@ void PhantomJSHandler::emitSignal(const CefRefPtr<CefBrowser>& browser, const QS
   }
   auto callback = m_browsers.at(browser->GetIdentifier()).signalCallback;
   if (!callback) {
-    qDebug() << "no signal callback for browser" << browser->GetIdentifier() << signal;
+    //qDebug() << "no signal callback for browser" << browser->GetIdentifier() << signal;
     return;
   }
   QJsonObject data = {
-    {QStringLiteral("signal"), signal},
+    {QStringLiteral("signal"), QString::fromStdString(signal)},
     {QStringLiteral("args"), arguments}
   };
   if (internal) {
@@ -429,7 +449,7 @@ void PhantomJSHandler::handleLoadEnd(CefRefPtr<CefBrowser> browser, int statusCo
   }
 
   if (canEmitSignal(browser)) {
-    emitSignal(browser, QStringLiteral("onLoadEnd"), {QString::fromStdString(url), success}, true);
+    emitSignal(browser, std::string("onLoadEnd"), {QString::fromStdString(url), success}, true);
   }
 
   while (auto callback = takeCallback(&m_waitForLoadedCallbacks, browser)) {
@@ -443,8 +463,12 @@ void PhantomJSHandler::handleLoadEnd(CefRefPtr<CefBrowser> browser, int statusCo
 
 bool PhantomJSHandler::GetViewRect(CefRefPtr<CefBrowser> browser, CefRect& rect)
 {
-  qCDebug(handler) << browser->GetIdentifier() << m_viewRects.value(browser->GetIdentifier());
-  const auto size = m_viewRects.value(browser->GetIdentifier(), qMakePair(800, 600));
+  //qCDebug(handler) << browser->GetIdentifier() << m_viewRects.at(browser->GetIdentifier());
+  if(m_viewRects.find(browser->GetIdentifier()) == m_viewRects.end())
+  {
+    m_viewRects.insert(std::make_pair(browser->GetIdentifier(), std::pair<int,int>(800, 600)));
+  }
+  const auto size = m_viewRects.at(browser->GetIdentifier());
   rect.Set(0, 0, size.first, size.second);
   return true;
 }
@@ -463,22 +487,22 @@ void PhantomJSHandler::OnPaint(CefRefPtr<CefBrowser> browser, PaintElementType t
     if (info.clipRect.isValid()) {
       image = image.copy(info.clipRect);
     }
-    if (info.format.isEmpty()) {
-      if (image.save(info.path)) {
+    if (info.format.empty()) {
+      if (image.save(QString::fromStdString(info.path))) {
         info.callback->Success({});
       } else {
-        info.callback->Failure(1, QStringLiteral("Failed to render page to \"%1\".").arg(info.path).toStdString());
+        info.callback->Failure(1, QStringLiteral("Failed to render page to \"%1\".").arg(QString::fromStdString(info.path)).toStdString());
       }
     } else {
       QByteArray ba;
       QBuffer buffer(&ba);
       buffer.open(QIODevice::WriteOnly);
-      if (image.save(&buffer, info.format.toUtf8().constData())) {
+      if (image.save(&buffer, info.format.c_str())) {
         const auto data = ba.toBase64();
         info.callback->Success(std::string(data.constData(), data.size()));
       } else {
         std::string error = "Failed to render page into Base64 encoded buffer of format \"";
-        error += qPrintable(info.format);
+        error += qPrintable(QString::fromStdString(info.format));
         error += "\". Available formats are: ";
         bool first = true;
         foreach (const auto& format, QImageWriter::supportedImageFormats()) {
@@ -504,7 +528,7 @@ void PhantomJSHandler::OnPaint(CefRefPtr<CefBrowser> browser, PaintElementType t
     jsonDirtyRects.push_back(jsonRect);
   }
 
-  emitSignal(browser, QStringLiteral("onPaint"), {jsonDirtyRects, width, height, type});
+  emitSignal(browser, std::string("onPaint"), {jsonDirtyRects, width, height, type});
 }
 
 void PhantomJSHandler::OnRenderProcessTerminated(CefRefPtr<CefBrowser> browser, TerminationStatus status)
@@ -575,9 +599,14 @@ CefRequestHandler::ReturnValue PhantomJSHandler::OnBeforeResourceLoad(CefRefPtr<
   jsonRequest[QStringLiteral("resourceType")] = static_cast<int>(request->GetResourceType());
   jsonRequest[QStringLiteral("transitionType")] = static_cast<int>(request->GetTransitionType());
 
-  m_requestCallbacks[request->GetIdentifier()] = {request, callback};
+  if(m_requestCallbacks.find(request->GetIdentifier()) == m_requestCallbacks.end())
+  {
+    m_requestCallbacks.insert(std::pair<uint64, RequestInfo>(request->GetIdentifier(), {request, callback}));
+  }
+  else
+    m_requestCallbacks.at(request->GetIdentifier()) = {request, callback};
 
-  emitSignal(browser, QStringLiteral("onBeforeResourceLoad"),
+  emitSignal(browser, std::string("onBeforeResourceLoad"),
              {jsonRequest, QString::number(request->GetIdentifier())}, true);
 
   return RV_CONTINUE_ASYNC;
@@ -595,7 +624,7 @@ bool PhantomJSHandler::OnResourceResponse(CefRefPtr<CefBrowser> browser, CefRefP
     jsonResponse[QStringLiteral("url")] = QString::fromStdString(request->GetURL());
     jsonResponse[QStringLiteral("id")] = QString::number(request->GetIdentifier());
     /// TODO: time, stage, bodySize, redirectUrl
-    emitSignal(browser, QStringLiteral("onResourceReceived"), {jsonResponse});
+    emitSignal(browser, std::string("onResourceReceived"), {jsonResponse});
   }
   return false;
 }
@@ -671,7 +700,7 @@ bool PhantomJSHandler::OnQuery(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame
     auto it = m_pendingQueryCallbacks.find(otherQueryId);
     if (it != m_pendingQueryCallbacks.end()) {
       auto exception = json.value(QStringLiteral("exception"));
-      auto otherCallback = it.value();
+      auto otherCallback = it->second;
       if (!exception.isUndefined()) {
         otherCallback->Failure(1, exception.toString().toStdString());
       } else {
@@ -708,7 +737,8 @@ bool PhantomJSHandler::OnQuery(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame
   } else if (type == QLatin1String("beforeDownloadResponse")) {
     const auto requestId = static_cast<uint64>(json.value(QStringLiteral("requestId")).toString().toULongLong());
     const auto target = json.value(QStringLiteral("target")).toString().toStdString();
-    auto callback = m_beforeDownloadCallbacks.take(requestId);
+    auto callback = m_beforeDownloadCallbacks.at(requestId);
+    m_beforeDownloadCallbacks.erase(requestId);
     if (!callback) {
       qCWarning(handler) << "Unknown request with id" << requestId << "for query" << json;
       return false;
@@ -717,7 +747,8 @@ bool PhantomJSHandler::OnQuery(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame
     return true;
   } else if (type == QLatin1String("cancelDownload")) {
     const auto requestId = static_cast<uint64>(json.value(QStringLiteral("requestId")).toString().toULongLong());
-    auto callback = m_downloadItemCallbacks.take(requestId);
+    auto callback = m_downloadItemCallbacks.at(requestId);
+    m_downloadItemCallbacks.erase(requestId);
     if (!callback) {
       qCWarning(handler) << "Unknown request with id" << requestId << "for query" << json;
       return false;
@@ -748,13 +779,13 @@ bool PhantomJSHandler::OnQuery(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame
                                          json.value(QStringLiteral("libraryPath")).toString(),
                                          QUrl::AssumeLocalFile);
     subBrowser->GetMainFrame()->LoadURL(url.toString().toStdString());
-    m_waitForLoadedCallbacks.insert(subBrowser->GetIdentifier(), callback);
+    m_waitForLoadedCallbacks.insert(std::pair<int32, CefRefPtr<CefMessageRouterBrowserSide::Callback> >(subBrowser->GetIdentifier(), callback));
     return true;
   } else if (type == QLatin1String("waitForLoaded")) {
-    m_waitForLoadedCallbacks.insert(subBrowser->GetIdentifier(), callback);
+      m_waitForLoadedCallbacks.insert(std::pair<int32, CefRefPtr<CefMessageRouterBrowserSide::Callback> >(subBrowser->GetIdentifier(), callback));
     return true;
   } else if (type == QLatin1String("waitForDownload")) {
-    m_waitForDownloadCallbacks.insert(subBrowser->GetIdentifier(), callback);
+    m_waitForLoadedCallbacks.insert(std::pair<int32, CefRefPtr<CefMessageRouterBrowserSide::Callback> >(subBrowser->GetIdentifier(), callback));
     return true;
   } else if (type == QLatin1String("stopWebPage")) {
     subBrowser->StopLoad();
@@ -769,7 +800,13 @@ bool PhantomJSHandler::OnQuery(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame
     auto url = json.value(QStringLiteral("url")).toString(QStringLiteral("phantomjs://evaluateJavaScript"));
     auto line = json.value(QStringLiteral("line")).toInt(1);
     auto args = json.value(QStringLiteral("args")).toString(QStringLiteral("[]"));
-    m_pendingQueryCallbacks[query_id] = callback;
+    if(m_pendingQueryCallbacks.find(query_id) == m_pendingQueryCallbacks.end())
+    {
+      m_pendingQueryCallbacks.insert(std::make_pair(query_id,callback));
+    }
+    else
+      m_pendingQueryCallbacks[query_id] = callback;
+      
     code = "phantom.internal.handleEvaluateJavaScript(" + code + ", " + args + ", " + QString::number(query_id) + ")";
     subBrowser->GetMainFrame()->ExecuteJavaScript(code.toStdString(), url.toStdString(), line);
     return true;
@@ -783,10 +820,10 @@ bool PhantomJSHandler::OnQuery(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame
         callback->Failure(1, "Invalid viewport size.");
         return true;
       } else {
-        const auto newSize = qMakePair(width, height);
-        auto& oldSize = m_viewRects[subBrowserId];
+        const auto newSize = std::pair<int,int>(width, height);
+        auto& oldSize = m_viewRects.at(subBrowserId);
         if (newSize != oldSize) {
-          m_viewRects[subBrowserId] = newSize;
+          m_viewRects.at(subBrowserId) = newSize;
           subBrowser->GetHost()->WasResized();
         }
       }
@@ -801,8 +838,8 @@ bool PhantomJSHandler::OnQuery(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame
     callback->Success({});
     return true;
   } else if (type == QLatin1String("renderImage")) {
-    const auto path = json.value(QStringLiteral("path")).toString();
-    const auto format = json.value(QStringLiteral("format")).toString();
+    const auto path = json.value(QStringLiteral("path")).toString().toStdString();
+    const auto format = json.value(QStringLiteral("format")).toString().toStdString();
     const auto clipRectJson = json.value(QStringLiteral("clipRect")).toObject();
     const auto clipRect = QRect(
       clipRectJson.value(QStringLiteral("left")).toDouble(),
@@ -810,7 +847,12 @@ bool PhantomJSHandler::OnQuery(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame
       clipRectJson.value(QStringLiteral("width")).toDouble(),
       clipRectJson.value(QStringLiteral("height")).toDouble()
     );
-    m_paintCallbacks[subBrowserId] = {path, format, clipRect, callback};
+    if(m_paintCallbacks.find(subBrowserId) == m_paintCallbacks.end())
+    {
+      m_paintCallbacks.insert(std::pair<int32,PaintInfo>(subBrowserId,{path, format, clipRect, callback}));
+    }
+    else
+      m_paintCallbacks.at(subBrowserId) = {path, format, clipRect, callback};
     subBrowser->GetHost()->Invalidate(PET_VIEW);
     return true;
   } else if (type == QLatin1String("printPdf")) {
@@ -951,8 +993,16 @@ bool PhantomJSHandler::OnQuery(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame
   } else if (type == QLatin1String("download")) {
     const auto source = json.value(QStringLiteral("source")).toString();
     const auto target = json.value(QStringLiteral("target")).toString();
-    m_downloadTargets[source] = {target, callback};
-    subBrowser->GetHost()->StartDownload(source.toStdString());
+    const auto  sourceStr = source.toStdString();
+    const auto  targetStr = target.toStdString();
+    if(m_downloadTargets.find(sourceStr) != m_downloadTargets.end())
+    {
+      m_downloadTargets.at(sourceStr) = {targetStr, callback};
+    }
+    else
+      m_downloadTargets.emplace(std::pair<std::string,DownloadTargetInfo>(sourceStr,{targetStr, callback}));
+    
+    subBrowser->GetHost()->StartDownload(sourceStr);
     return true;
   }
   return false;
@@ -963,42 +1013,51 @@ void PhantomJSHandler::OnQueryCanceled(CefRefPtr<CefBrowser> browser, CefRefPtr<
 {
   CEF_REQUIRE_UI_THREAD();
 
-  m_waitForLoadedCallbacks.remove(browser->GetIdentifier());
-  m_pendingQueryCallbacks.remove(query_id);
-  m_paintCallbacks.remove(browser->GetIdentifier());
+  m_waitForLoadedCallbacks.erase(browser->GetIdentifier());
+  m_pendingQueryCallbacks.erase(query_id);
+  m_paintCallbacks.erase(browser->GetIdentifier());
 }
 
 void PhantomJSHandler::OnBeforeDownload(CefRefPtr<CefBrowser> browser, CefRefPtr<CefDownloadItem> download_item, const CefString& suggested_name, CefRefPtr<CefBeforeDownloadCallback> callback)
 {
-  const auto source = QString::fromStdString(download_item->GetOriginalUrl());
-  const auto target = m_downloadTargets.take(source);
+  const auto source = download_item->GetOriginalUrl();
+  const auto target = m_downloadTargets.at(source);
+  m_downloadTargets.erase(source);
 
-  qCDebug(handler) << browser->GetIdentifier() << source << target.target;
+  //qCDebug(handler) << browser->GetIdentifier() << source << target.target;
 
   if (!target.callback) {
     // not a manually triggered page.download() call but an indirect one
     // call back to the user script to ask for a download location
-    m_beforeDownloadCallbacks[download_item->GetId()] = callback;
+    m_beforeDownloadCallbacks.at(download_item->GetId())= callback;
 
-    emitSignal(browser, QStringLiteral("onBeforeDownload"), {
+    emitSignal(browser, std::string("onBeforeDownload"), {
                 QString::number(download_item->GetId()),
                 QString::fromStdString(download_item->GetOriginalUrl())
               }, true);
     return;
   }
 
-  m_downloadCallbacks[download_item->GetId()] = target.callback;
-  callback->Continue(target.target.toStdString(), false);
+  m_downloadCallbacks.at(download_item->GetId()) = target.callback;
+  callback->Continue(target.target, false);
 }
 
 void PhantomJSHandler::OnDownloadUpdated(CefRefPtr<CefBrowser> browser, CefRefPtr<CefDownloadItem> download_item, CefRefPtr<CefDownloadItemCallback> callback)
 {
   qCDebug(handler) << browser->GetIdentifier() << download_item->GetURL() << download_item->GetPercentComplete() << download_item->IsComplete() << download_item->IsCanceled() << download_item->IsInProgress();
-
-  m_downloadItemCallbacks[download_item->GetId()] = callback;
+  
+  if(m_downloadItemCallbacks.find(download_item->GetId()) == m_downloadItemCallbacks.end())
+  {
+     m_downloadItemCallbacks.emplace(std::pair<uint, CefRefPtr<CefDownloadItemCallback> >(download_item->GetId(), callback));
+  }
+  else
+  {
+    m_downloadItemCallbacks.at(download_item->GetId()) = callback;
+  }
+  
   const auto jsonDownloadItem = toJson(download_item);
 
-  emitSignal(browser, QStringLiteral("onDownloadUpdated"),
+  emitSignal(browser, std::string("onDownloadUpdated"),
              {QString::number(download_item->GetId()), jsonDownloadItem}, true);
 
   if (!download_item->IsInProgress()) {
@@ -1011,14 +1070,19 @@ void PhantomJSHandler::OnDownloadUpdated(CefRefPtr<CefBrowser> browser, CefRefPt
     } else {
        data = QJsonDocument(jsonDownloadItem).toJson();
     }
-    auto callback = m_downloadCallbacks.take(download_item->GetId());
-    if (callback) {
-      if (errorMessage.empty()) {
-        callback->Success(data.constData());
-      } else {
-        callback->Failure(download_item->IsCanceled() ? 0 : 1, errorMessage);
+    if(m_downloadCallbacks.find(download_item->GetId()) != m_downloadCallbacks.end())
+    {
+       auto callback = m_downloadCallbacks.at(download_item->GetId()); 
+       if (callback) {
+        if (errorMessage.empty()) {
+          callback->Success(data.constData());
+        } else {
+          callback->Failure(download_item->IsCanceled() ? 0 : 1, errorMessage);
+        }
       }
     }
+    
+    
     while (auto callback = takeCallback(&m_waitForDownloadCallbacks, browser)) {
       if (errorMessage.empty()) {
         callback->Success(data.constData());
