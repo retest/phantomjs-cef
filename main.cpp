@@ -4,13 +4,15 @@
 
 #if OS_WIN
 #include <windows.h>
+#else
+#include <pwd.h>
+#include <unistd.h>
 #endif
 
-#include <QGuiApplication>
-#include <QStandardPaths>
-#include <QtPlugin>
-
+#include <iostream>
 #include "app.h"
+#include <locale>
+#include <codecvt>
 
 #include "include/base/cef_logging.h"
 
@@ -27,7 +29,7 @@ Q_IMPORT_PLUGIN (QWindowsIntegrationPlugin);
 
 #elif defined(IMPORT_STATIC_QT_PLUGIN)
 
-Q_IMPORT_PLUGIN (QMinimalIntegrationPlugin);
+//Q_IMPORT_PLUGIN (QMinimalIntegrationPlugin);
 
 #endif
 
@@ -71,11 +73,6 @@ int main(int argc, char** argv)
     return 1;
   }
 
-  // NOTE: we do not run the Qt eventloop, so don't use signals/slots or similar
-  // we mostly integrate Qt for its painting API and the resource system
-  QGuiApplication qtApp(argc, argv);
-  Q_UNUSED(qtApp);
-
   // Specify CEF global settings here.
   CefSettings settings;
   // TODO: make this configurable like previously in phantomjs
@@ -85,12 +82,17 @@ int main(int argc, char** argv)
   // NOTE: accessing the file system requires us to disable sandboxing
   settings.no_sandbox = true;
 
-  const auto cachePath = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+  
 #if OS_WIN
   const auto wPath = cachePath.toStdWString();
   cef_string_set(wPath.data(), wPath.size(), &settings.cache_path, 1);
 #else
-  cef_string_set(cachePath.utf16(), cachePath.size(), &settings.cache_path, 1);
+  passwd* pw = getpwuid(getuid());
+  std::string cachePath(pw->pw_dir);
+  cachePath+= "/.cache/phantomjs";
+
+  cef_string_utf8_to_utf16(cachePath.c_str(),cachePath.size(), &settings.cache_path);
+  
 #endif
 
   //   settings.log_severity = LOGSEVERITY_VERBOSE;
