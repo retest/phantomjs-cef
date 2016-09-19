@@ -9,6 +9,8 @@
 #include <iostream>
 #include <locale>
 #include <algorithm>
+#include <experimental/filesystem>
+#include <cctype>
 
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -19,7 +21,7 @@
 #include <QBuffer>
 #include <QImageWriter>
 #include <QDateTime>
-#include <QFileInfo>
+
 #include <QMessageLogger>
 #include <QUrl>
 
@@ -34,6 +36,10 @@
 #include "WindowsKeyboardCodes.h"
 #include "keyevents.h"
 
+
+
+
+namespace fs = std::experimental::filesystem;
 namespace {
 
 /**
@@ -95,7 +101,27 @@ void initWindowInfo(CefWindowInfo& window_info, bool isPhantomMain)
   }
 }
 
-cef_state_t toState(const QJsonValue& value)
+
+cef_state_t toState(const rapidjson::Value& value)
+{
+  
+  
+  if (value.IsBool()) {
+    return value.GetBool() ? STATE_ENABLED : STATE_DISABLED;
+  } else if (value.IsString()) {
+    std::string stringValue = value.GetString(),strON("ON"), strYes("YES");
+    transform(stringValue.begin(), stringValue.end(), stringValue.begin(), toupper);
+    
+    if(stringValue == strON || stringValue != strYes )
+    {
+      return STATE_ENABLED;  
+    }
+    
+  }
+
+  return STATE_DEFAULT;
+}
+/*cef_state_t toState(const QJsonValue& value)
 {
   if (value.isBool()) {
     return value.toBool() ? STATE_ENABLED : STATE_DISABLED;
@@ -110,8 +136,38 @@ cef_state_t toState(const QJsonValue& value)
 
   return STATE_DEFAULT;
 }
+*/
 
-void initBrowserSettings(CefBrowserSettings& browser_settings, bool isPhantomMain,
+void   initBrowserSettings(CefBrowserSettings& browser_settings, bool isPhantomMain,
+                         const rapidjson::Value& config)
+{
+  
+ 
+  // TODO: make this configurable
+  if (isPhantomMain) {
+    browser_settings.web_security = STATE_DISABLED;
+    browser_settings.universal_access_from_file_urls = STATE_ENABLED;
+    browser_settings.file_access_from_file_urls = STATE_ENABLED;
+  } else if(!config.IsObject())  {
+    
+     browser_settings.web_security = STATE_DEFAULT;
+    browser_settings.universal_access_from_file_urls = STATE_DEFAULT;
+    browser_settings.image_loading =STATE_DEFAULT;
+    browser_settings.javascript = STATE_DEFAULT;
+    browser_settings.javascript_open_windows = STATE_DEFAULT;
+    browser_settings.javascript_close_windows = STATE_DEFAULT;
+  }
+  else  {
+    browser_settings.web_security = toState(config["webSecurityEnabled"]);
+    browser_settings.universal_access_from_file_urls = toState(config["localToRemoteUrlAccessEnabled"]);
+    browser_settings.image_loading = toState(config["loadImages"]);
+    browser_settings.javascript = toState(config["javascriptEnabled"]);
+    browser_settings.javascript_open_windows = toState(config["javascriptOpenWindows"]);
+    browser_settings.javascript_close_windows = toState(config["javascriptCloseWindows"]);
+    /// TODO: extend
+  }
+}
+/*void initBrowserSettings(CefBrowserSettings& browser_settings, bool isPhantomMain,
                          const QJsonObject& config)
 {
   // TODO: make this configurable
@@ -129,7 +185,7 @@ void initBrowserSettings(CefBrowserSettings& browser_settings, bool isPhantomMai
     /// TODO: extend
   }
 }
-
+*/
 #if CHROME_VERSION_BUILD >= 2526
 const bool PRINT_SETTINGS = false;
 
@@ -223,7 +279,7 @@ CefMessageRouterConfig PhantomJSHandler::messageRouterConfig()
 }
 
 CefRefPtr<CefBrowser> PhantomJSHandler::createBrowser(const CefString& url, bool isPhantomMain,
-                                                      const QJsonObject& config)
+                                                      const rapidjson::Value& config)
 {
   CefWindowInfo window_info;
   initWindowInfo(window_info, isPhantomMain);
@@ -231,7 +287,7 @@ CefRefPtr<CefBrowser> PhantomJSHandler::createBrowser(const CefString& url, bool
   CefBrowserSettings browser_settings;
   initBrowserSettings(browser_settings, isPhantomMain, config);
 
-  qCDebug(handler) << url << isPhantomMain << config;
+  //qCDebug(handler) << url << isPhantomMain << config;
 
   return CefBrowserHost::CreateBrowserSync(window_info, this, url, browser_settings,
                                            NULL);
@@ -254,7 +310,9 @@ bool PhantomJSHandler::OnProcessMessageReceived(CefRefPtr<CefBrowser> browser,
 bool PhantomJSHandler::OnConsoleMessage(CefRefPtr<CefBrowser> browser, const CefString& message, const CefString& source, int line)
 {
   if (!canEmitSignal(browser)) {
-    auto shortSource = QFileInfo(QString::fromStdString(source)).fileName().toStdString();
+    fs::path  filepath = source.ToString();
+    
+    auto shortSource = fs::absolute(filepath).filename().string();
     QMessageLogger(shortSource.c_str(), line, 0).debug() << message;
   } else {
     emitSignal(browser, std::string("onConsoleMessage"),
@@ -330,7 +388,7 @@ bool PhantomJSHandler::OnBeforePopup(CefRefPtr<CefBrowser> browser, CefRefPtr<Ce
   qCDebug(handler) << browser->GetIdentifier() << frame->GetURL() << target_url << target_frame_name;
   // TODO: inherit settings? manipulate?
   initWindowInfo(windowInfo, false);
-  initBrowserSettings(settings, false, {});
+  initBrowserSettings(settings, false, rapidjson::Value());
   client = this;
   // TODO: is it enough to assume the next browser that will be created belongs to this popup request?
   m_popupToParentMapping.push_front(browser->GetIdentifier());
@@ -673,91 +731,102 @@ bool PhantomJSHandler::OnQuery(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame
 
   const auto data = QByteArray(request.ToString().data());
 
-  QJsonParseError error;
-  const auto json = QJsonDocument::fromJson(data, &error).object();
-  qCDebug(handler) << browser->GetIdentifier() << frame->GetURL() << json;
-  if (error.error) {
-    qCWarning(handler) << error.errorString();
-    return false;
+  
+  rapidjson::Document json;
+  
+  
+  if(json.Parse(request.ToString().data()).HasParseError())
+  {
+     //TODO: warning 
+     return false;
   }
+  //qCDebug(handler) << browser->GetIdentifier() << frame->GetURL() << json;
+ 
 
-  const auto type = json.value(QStringLiteral("type")).toString();
-
-  if (type == QLatin1String("createBrowser")) {
-    const auto& settings = json.value(QStringLiteral("settings")).toObject();
+  const auto type = std::string(json["type"].GetString());
+  //std::cout << "query type: " << type << std::endl;
+  if (type == "createBrowser") {
+    const auto& settings = json["settings"].GetObject();
     auto subBrowser = createBrowser("about:blank", false, settings);
     if ( m_browsers.find(subBrowser->GetIdentifier()) == m_browsers.end() )
     {
       m_browsers.emplace(subBrowser->GetIdentifier(),PhantomJSHandler::BrowserInfo());
     }
     auto& info = m_browsers.at(subBrowser->GetIdentifier());
-    info.authName = settings.value(QStringLiteral("userName")).toString().toStdString();
-    info.authPassword = settings.value(QStringLiteral("password")).toString().toStdString();
+    if(settings.HasMember("userName"))
+      info.authName = settings["userName"].GetString();
+    if(settings.HasMember("password"))
+    info.authPassword = settings["password"].GetString();
     callback->Success(std::to_string(subBrowser->GetIdentifier()));
     return true;
-  } else if (type == QLatin1String("returnEvaluateJavaScript")) {
-    auto otherQueryId = json.value(QStringLiteral("queryId")).toInt(-1);
+  } else if (type == "returnEvaluateJavaScript") {
+    int otherQueryId = -1;
+    if(json.HasMember("queryId"))
+      otherQueryId = json["queryId"].GetInt();
     auto it = m_pendingQueryCallbacks.find(otherQueryId);
     if (it != m_pendingQueryCallbacks.end()) {
-      auto exception = json.value(QStringLiteral("exception"));
       auto otherCallback = it->second;
-      if (!exception.isUndefined()) {
-        otherCallback->Failure(1, exception.toString().toStdString());
+      if (json.HasMember("exception")) {
+        auto& exception = json["exception"];
+        otherCallback->Failure(1, exception.GetString());
       } else {
-        auto retval = json.value(QStringLiteral("retval")).toString();
-        otherCallback->Success(retval.toStdString());
+        auto retval = json["retval"].GetString();
+        otherCallback->Success(retval);
       }
       m_pendingQueryCallbacks.erase(it);
       callback->Success({});
       return true;
     }
-  } else if (type == QLatin1String("beforeResourceLoadResponse")) {
-    const auto requestId = static_cast<uint64>(json.value(QStringLiteral("requestId")).toString().toULongLong());
+  } else if (type =="beforeResourceLoadResponse" ) {
+    //json["requestId"] is String, convert it to uint64_t 
+    const auto requestId = static_cast<uint64>(std::stoull(json["requestId"].GetString()));
     auto callback = takeCallback(&m_requestCallbacks, requestId);
     if (!callback.callback || !callback.request) {
-      qCWarning(handler) << "Unknown request with id" << requestId << "for query" << json;
+     // qCWarning(handler) << "Unknown request with id" << requestId << "for query" << json;
       return false;
     }
-    const auto allow = json.value(QStringLiteral("allow")).toBool();
+    const auto allow = json["allow"].GetBool();
     if (!allow) {
       callback.callback->Continue(allow);
       return true;
     }
-    auto requestData = json.value(QStringLiteral("request")).toObject();
-    callback.request->SetURL(requestData.value(QStringLiteral("url")).toString().toStdString());
+    auto requestData = json["request"].GetObject();
+    callback.request->SetURL(requestData["url"].GetString());
     CefRequest::HeaderMap headers;
-    const auto& jsonHeaders = requestData.value(QStringLiteral("headers")).toObject();
-    for (auto it = jsonHeaders.begin(); it != jsonHeaders.end(); ++it) {
-      headers.insert(std::make_pair(it.key().toStdString(), it.value().toString().toStdString()));
+    const auto& jsonHeaders = requestData["headers"].GetObject();
+    for (auto it = jsonHeaders.MemberBegin(); it != jsonHeaders.MemberEnd(); ++it) {
+      headers.insert(std::make_pair(it->name.GetString(), it->  value.GetString()));
     }
     callback.request->SetHeaderMap(headers);
     // TODO: post support
     callback.callback->Continue(true);
     return true;
-  } else if (type == QLatin1String("beforeDownloadResponse")) {
-    const auto requestId = static_cast<uint64>(json.value(QStringLiteral("requestId")).toString().toULongLong());
-    const auto target = json.value(QStringLiteral("target")).toString().toStdString();
+  } else if (type =="beforeDownloadResponse") {
+    const auto requestId = static_cast<uint64>(json["requestId"].GetUint64());
+    const auto target = json["target"].GetString();
     auto callback = m_beforeDownloadCallbacks.at(requestId);
     m_beforeDownloadCallbacks.erase(requestId);
     if (!callback) {
-      qCWarning(handler) << "Unknown request with id" << requestId << "for query" << json;
+      //qCWarning(handler) << "Unknown request with id" << requestId << "for query" << json;
       return false;
     }
     callback->Continue(target, false);
     return true;
-  } else if (type == QLatin1String("cancelDownload")) {
-    const auto requestId = static_cast<uint64>(json.value(QStringLiteral("requestId")).toString().toULongLong());
+  } else if (type =="cancelDownload") {
+    const auto requestId = static_cast<uint64>(json["requestId"].GetUint64());
     auto callback = m_downloadItemCallbacks.at(requestId);
     m_downloadItemCallbacks.erase(requestId);
     if (!callback) {
-      qCWarning(handler) << "Unknown request with id" << requestId << "for query" << json;
+      //qCWarning(handler) << "Unknown request with id" << requestId << "for query" << json;
       return false;
     }
     callback->Cancel();
     return true;
   }
-
-  const auto subBrowserId = json.value(QStringLiteral("browser")).toInt(-1);
+  int subBrowserId = -1;
+  
+  if(json.HasMember("browser"))
+    subBrowserId = json["browser"].GetInt();
   if ( m_browsers.find(subBrowserId) == m_browsers.end() )
   {
     m_browsers.emplace(subBrowserId,PhantomJSHandler::BrowserInfo());
@@ -765,87 +834,113 @@ bool PhantomJSHandler::OnQuery(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame
   auto& subBrowserInfo = m_browsers.at(subBrowserId);
   const auto& subBrowser = subBrowserInfo.browser;
   if (!subBrowser) {
-    qCWarning(handler) << "Unknown browser with id" << subBrowserId << "for request" << json;
+    //qCWarning(handler) << "Unknown browser with id" << subBrowserId << "for request" << json;
     return false;
   }
 
   // below, all queries work on a browser
-  if (type == QLatin1String("webPageSignals")) {
+  if (type == "webPageSignals") {
     subBrowserInfo.signalCallback = callback;
     Q_ASSERT(persistent);
     return true;
-  } else if (type == QLatin1String("openWebPage")) {
-    const auto url = QUrl::fromUserInput(json.value(QStringLiteral("url")).toString(),
-                                         json.value(QStringLiteral("libraryPath")).toString(),
+  } else if (type == "openWebPage") {
+    const auto url = QUrl::fromUserInput(json["url"].GetString(),
+                                         json["libraryPath"].GetString(),
                                          QUrl::AssumeLocalFile);
     subBrowser->GetMainFrame()->LoadURL(url.toString().toStdString());
     m_waitForLoadedCallbacks.insert(std::pair<int32, CefRefPtr<CefMessageRouterBrowserSide::Callback> >(subBrowser->GetIdentifier(), callback));
     return true;
-  } else if (type == QLatin1String("waitForLoaded")) {
+  } else if (type == "waitForLoaded") {
       m_waitForLoadedCallbacks.insert(std::pair<int32, CefRefPtr<CefMessageRouterBrowserSide::Callback> >(subBrowser->GetIdentifier(), callback));
     return true;
-  } else if (type == QLatin1String("waitForDownload")) {
+  } else if (type == "waitForDownload") {
     m_waitForLoadedCallbacks.insert(std::pair<int32, CefRefPtr<CefMessageRouterBrowserSide::Callback> >(subBrowser->GetIdentifier(), callback));
     return true;
-  } else if (type == QLatin1String("stopWebPage")) {
+  } else if (type =="stopWebPage") {
     subBrowser->StopLoad();
     callback->Success({});
     return true;
-  } else if (type == QLatin1String("closeWebPage")) {
+  } else if (type == "closeWebPage") {
     subBrowser->GetHost()->CloseBrowser(true);
     callback->Success({});
     return true;
-  } else if (type == QLatin1String("evaluateJavaScript")) {
-    auto code = json.value(QStringLiteral("code")).toString();
-    auto url = json.value(QStringLiteral("url")).toString(QStringLiteral("phantomjs://evaluateJavaScript"));
-    auto line = json.value(QStringLiteral("line")).toInt(1);
-    auto args = json.value(QStringLiteral("args")).toString(QStringLiteral("[]"));
+  } else if (type == "evaluateJavaScript") {
+    std::string code = json["code"].GetString();
+    std::string url = "phantomjs://evaluateJavaScript";
+    if(json.HasMember("url"))
+      url = json["url"].GetString();
+    int line = 1;
+    if(json.HasMember("line"))
+      line = json["line"].GetInt();
+    std::string args = "[]";
+    if(json.HasMember("args"))
+      args = json["args"].GetString();
+      
     if(m_pendingQueryCallbacks.find(query_id) == m_pendingQueryCallbacks.end())
     {
       m_pendingQueryCallbacks.insert(std::make_pair(query_id,callback));
     }
     else
       m_pendingQueryCallbacks[query_id] = callback;
-      
-    code = "phantom.internal.handleEvaluateJavaScript(" + code + ", " + args + ", " + QString::number(query_id) + ")";
-    subBrowser->GetMainFrame()->ExecuteJavaScript(code.toStdString(), url.toStdString(), line);
+    
+    std::string tmpCode = "phantom.internal.handleEvaluateJavaScript(";
+    tmpCode+= code;
+    tmpCode+= ", " ;
+    tmpCode+=args;
+    tmpCode+=", ";
+    tmpCode+=std::to_string(query_id);
+    tmpCode+= ")";
+    code = tmpCode;
+    subBrowser->GetMainFrame()->ExecuteJavaScript(code ,url, line);
     return true;
-  } else if (type == QLatin1String("setProperty")) {
-    const auto name = json.value(QStringLiteral("name")).toString();
-    const auto value = json.value(QStringLiteral("value"));
-    if (name == QLatin1String("viewportSize")) {
-      const auto width = value.toObject().value(QStringLiteral("width")).toInt(-1);
-      const auto height = value.toObject().value(QStringLiteral("height")).toInt(-1);
-      if (width < 0 || height < 0) {
-        callback->Failure(1, "Invalid viewport size.");
-        return true;
-      } else {
-        const auto newSize = std::pair<int,int>(width, height);
-        auto& oldSize = m_viewRects.at(subBrowserId);
-        if (newSize != oldSize) {
-          m_viewRects.at(subBrowserId) = newSize;
-          subBrowser->GetHost()->WasResized();
+  } else if (type == "setProperty") {
+    const std::string name = json["name"].GetString();
+    
+    if (name == "viewportSize") {
+      if(json["value"].IsObject())
+      {
+        const auto& value = json["value"].GetObject();
+    
+        int width = -1;
+        int height = -1;
+        if(value.HasMember("width"))
+          width = value["width"].GetInt();
+        if(value.HasMember("height"))
+          height = value["height"].GetInt();
+        if (width < 0 || height < 0) {
+          callback->Failure(1, "Invalid viewport size.");
+          return true;
+        } else {
+          const auto newSize = std::pair<int,int>(width, height);
+          auto& oldSize = m_viewRects.at(subBrowserId);
+          if (newSize != oldSize) {
+            m_viewRects.at(subBrowserId) = newSize;
+            subBrowser->GetHost()->WasResized();
+          }
         }
       }
-    } else if (name == QLatin1String("zoomFactor")) {
-      const auto value = json.value(QStringLiteral("value")).toDouble(1.);
+      
+    } else if (name == "zoomFactor") {
+      double value = 1.0;
+      if(json.HasMember("value")  )
+        value = json["value"].GetDouble();
       /// TODO: this doesn't seem to work
       subBrowser->GetHost()->SetZoomLevel(value);
     } else {
-      callback->Failure(1, "unknown property: " + name.toStdString());
+      callback->Failure(1, "unknown property: " + name);
       return true;
     }
     callback->Success({});
     return true;
-  } else if (type == QLatin1String("renderImage")) {
-    const auto path = json.value(QStringLiteral("path")).toString().toStdString();
-    const auto format = json.value(QStringLiteral("format")).toString().toStdString();
-    const auto clipRectJson = json.value(QStringLiteral("clipRect")).toObject();
+  } else if (type == "renderImage") {
+    const std::string path = json["path"].GetString();
+    const std::string format = json["format"].GetString();
+    const auto clipRectJson = json["clipRect"].GetObject();
     const auto clipRect = QRect(
-      clipRectJson.value(QStringLiteral("left")).toDouble(),
-      clipRectJson.value(QStringLiteral("top")).toDouble(),
-      clipRectJson.value(QStringLiteral("width")).toDouble(),
-      clipRectJson.value(QStringLiteral("height")).toDouble()
+      clipRectJson["left"].GetDouble(),
+      clipRectJson["top"].GetDouble(),
+      clipRectJson["width"].GetDouble(),
+      clipRectJson["height"].GetDouble()
     );
     if(m_paintCallbacks.find(subBrowserId) == m_paintCallbacks.end())
     {
@@ -855,52 +950,56 @@ bool PhantomJSHandler::OnQuery(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame
       m_paintCallbacks.at(subBrowserId) = {path, format, clipRect, callback};
     subBrowser->GetHost()->Invalidate(PET_VIEW);
     return true;
-  } else if (type == QLatin1String("printPdf")) {
-    const auto path = json.value(QStringLiteral("path")).toString().toStdString();
+  } else if (type == "printPdf") {
+    const std::string path = json["path"].GetString();
     CefPdfPrintSettings settings;
-    const auto paperSize = json.value(QStringLiteral("paperSize")).toObject();
-    if (!paperSize.value(QStringLiteral("orientation")).toString().compare("landscape", Qt::CaseInsensitive)) {
+    const auto paperSize = json["paperSize"].GetObject();
+    std::string pageOrientation = paperSize["orientation"].GetString(), strlandScape("LANDSCAPE");
+    std::transform(pageOrientation.begin(),pageOrientation.end(),pageOrientation.end(),toupper);
+    
+    if (pageOrientation != strlandScape) {
       settings.landscape = true;
     }
     QPageSize pageSize;
-    if (paperSize.contains(QStringLiteral("format"))) {
-      pageSize = pageSizeForName(paperSize.value(QStringLiteral("format")).toString());
-    } else if (paperSize.contains(QStringLiteral("width")) && paperSize.contains(QStringLiteral("height"))) {
-      auto width = stringToPointSize(paperSize.value(QStringLiteral("width")).toString());
-      auto height = stringToPointSize(paperSize.value(QStringLiteral("height")).toString());
+    if (paperSize.HasMember("format")) {
+      std::string paperSizeFormat = paperSize["format"].GetString();;
+      pageSize = pageSizeForName(QString::fromStdString(paperSizeFormat));
+    } else if (paperSize.HasMember("width") && paperSize.HasMember("height")) {
+      auto width = stringToPointSize(QString::fromStdString(paperSize["width"].GetString()));
+      auto height = stringToPointSize(QString::fromStdString(paperSize["height"].GetString()));
       pageSize = QPageSize(QSize(width, height), QPageSize::Point);
     }
     auto rect = pageSize.rect(QPageSize::Millimeter);
     settings.page_height = rect.height() * 1000;
     settings.page_width = rect.width() * 1000;
 
-    const auto margin = paperSize.value(QStringLiteral("margin"));
-    if (margin.isString()) {
-      const auto marginString = margin.toString();
-      if (marginString == QLatin1String("default")) {
+    const auto& margin = paperSize["margin"];
+    if (margin.IsString()) {
+      const std::string marginString = margin.GetString();
+      if (marginString == "default") {
         settings.margin_type = PDF_PRINT_MARGIN_DEFAULT;
-      } else if (marginString == QLatin1String("minimum")) {
+      } else if (marginString == "minimum") {
         settings.margin_type = PDF_PRINT_MARGIN_MINIMUM;
-      } else if (marginString == QLatin1String("none")) {
+      } else if (marginString == "none") {
         settings.margin_type = PDF_PRINT_MARGIN_NONE;
       } else {
         settings.margin_type = PDF_PRINT_MARGIN_CUSTOM;
-        int intMargin = stringToMillimeter(marginString);
+        int intMargin = stringToMillimeter(QString::fromStdString(marginString));
         settings.margin_left = intMargin;
         settings.margin_top = intMargin;
         settings.margin_right = intMargin;
         settings.margin_bottom = intMargin;
       }
-    } else if (margin.isObject()) {
-      auto marginObject = margin.toObject();
+    } else if (margin.IsObject()) {
+      auto marginObject = margin.GetObject();
       settings.margin_type = PDF_PRINT_MARGIN_CUSTOM;
-      settings.margin_left = stringToMillimeter(marginObject.value(QStringLiteral("left")).toString());
-      settings.margin_top = stringToMillimeter(marginObject.value(QStringLiteral("top")).toString());
-      settings.margin_right = stringToMillimeter(marginObject.value(QStringLiteral("right")).toString());
-      settings.margin_bottom = stringToMillimeter(marginObject.value(QStringLiteral("bottom")).toString());
+      settings.margin_left = stringToMillimeter(marginObject["left"].GetString());
+      settings.margin_top = stringToMillimeter(marginObject["top"].GetString());
+      settings.margin_right =stringToMillimeter(marginObject["right"].GetString());
+      settings.margin_bottom = stringToMillimeter(marginObject["bottom"].GetString());
     }
-    qCDebug(print) << paperSize << pageSize.name() << settings.page_height << settings.page_width << "landscape:" << settings.landscape
-                    << "margins:"<< settings.margin_bottom << settings.margin_left << settings.margin_top << settings.margin_right << "margin type:" << settings.margin_type;
+  /*  qCDebug(print) << paperSize << pageSize.name() << settings.page_height << settings.page_width << "landscape:" << settings.landscape
+                    << "margins:"<< settings.margin_bottom << settings.margin_left << settings.margin_top << settings.margin_right << "margin type:" << settings.margin_type;*/
     subBrowser->GetHost()->PrintToPDF(path, settings, makePdfPrintCallback([callback] (const CefString& path, bool success) {
       if (success) {
         callback->Success(path);
@@ -909,22 +1008,23 @@ bool PhantomJSHandler::OnQuery(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame
       }
     }));
     return true;
-  } else if (type == QLatin1String("sendEvent")) {
-    const auto event = json.value(QStringLiteral("event")).toString();
-    const auto modifiers = json.value(QStringLiteral("modifiers")).toInt();
-    if (event == QLatin1String("keydown") || event == QLatin1String("keyup") || event == QLatin1String("keypress")) {
+  } else if (type == "sendEvent") {
+    const std::string event = json["event"].GetString();
+    const auto modifiers = json["modifiers"].GetInt();
+    if (event == "keydown" || event == "keyup" || event == "keypress") {
       CefKeyEvent keyEvent;
       keyEvent.modifiers = modifiers;
-      auto arg1 = json.value(QStringLiteral("arg1"));
-      if (arg1.isString()) {
-   	    qCDebug(handler) << json << event << "string";
-        foreach (auto c, arg1.toString()) {
-          keyEvent.character = c.unicode();
-          keyEvent.windows_key_code = c.unicode();
-          keyEvent.native_key_code = c.unicode();
-          if (event == QLatin1String("keydown")) {
+      auto& arg1 = json["arg1"];
+      if (arg1.IsString()) {
+   	   // qCDebug(handler) << json << event << "string";
+   	   std::string arg1Str = arg1.GetString();
+        for (auto& c : arg1Str) {
+          keyEvent.character = c;
+          keyEvent.windows_key_code = c;
+          keyEvent.native_key_code = c;
+          if (event == "keydown") {
             keyEvent.type = KEYEVENT_KEYDOWN;
-          } else if (event == QLatin1String("keyup")) {
+          } else if (event == "keyup") {
             keyEvent.type = KEYEVENT_KEYUP;
           } else {
             keyEvent.type = KEYEVENT_CHAR;
@@ -932,18 +1032,18 @@ bool PhantomJSHandler::OnQuery(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame
           subBrowser->GetHost()->SendKeyEvent(keyEvent);
         }
       } else {
-   	    qCDebug(handler) << json << event << "char";
-        if (event == QLatin1String("keydown")) {
+   	   // qCDebug(handler) << json << event << "char";
+        if (event == "keydown") {
           keyEvent.type = KEYEVENT_KEYDOWN;
-        } else if (event == QLatin1String("keyup")) {
+        } else if (event == "keyup") {
           keyEvent.type = KEYEVENT_KEYUP;
         } else {
           keyEvent.type = KEYEVENT_CHAR;
         }
-        qCDebug(handler) << "~~~~~" << arg1.toInt();
-        keyEvent.windows_key_code = arg1.toInt();
+        //qCDebug(handler) << "~~~~~" << arg1.toInt();
+        keyEvent.windows_key_code = arg1.GetInt();
         keyEvent.native_key_code = vkToNative(keyEvent.native_key_code);
-        keyEvent.character = arg1.toInt();
+        keyEvent.character = arg1.GetInt();
         if (keyEvent.type != KEYEVENT_CHAR) {
           subBrowser->GetHost()->SendKeyEvent(keyEvent);
         } else {
@@ -955,46 +1055,46 @@ bool PhantomJSHandler::OnQuery(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame
           subBrowser->GetHost()->SendKeyEvent(keyEvent);
         }
       }
-    } else if (event == QLatin1String("click") || event == QLatin1String("doubleclick")
-            || event == QLatin1String("mousedown") || event == QLatin1String("mouseup")
-            || event == QLatin1String("mousemove"))
+    } else if (event == "click" || event == "doubleclick"
+            || event == "mousedown" || event == "mouseup"
+            || event == "mousemove")
     {
       CefMouseEvent mouseEvent;
       mouseEvent.modifiers = modifiers;
       if (!modifiers) {
         mouseEvent.modifiers = EVENTFLAG_LEFT_MOUSE_BUTTON;
       }
-      mouseEvent.x = json.value(QStringLiteral("arg1")).toDouble();
-      mouseEvent.y = json.value(QStringLiteral("arg2")).toDouble();
+      mouseEvent.x = json["arg1"].GetDouble();
+      mouseEvent.y = json["arg2"].GetDouble();
       cef_mouse_button_type_t type = MBT_LEFT;
-      const auto typeString = json.value(QStringLiteral("arg3")).toString();
-      if (typeString == QLatin1String("right")) {
+      const std::string typeString = json["arg3"].GetString();
+      if (typeString == "right") {
         type = MBT_RIGHT;
-      } else if (typeString == QLatin1String("middle")) {
+      } else if (typeString == "middle") {
         type = MBT_MIDDLE;
       }
-      if (event == QLatin1String("doubleclick")) {
+      if (event == "doubleclick") {
         subBrowser->GetHost()->SendMouseClickEvent(mouseEvent, type, false, 2);
         subBrowser->GetHost()->SendMouseClickEvent(mouseEvent, type, true, 2);
-      } else if (event == QLatin1String("click")) {
+      } else if (event == "click") {
         subBrowser->GetHost()->SendMouseClickEvent(mouseEvent, type, false, 1);
         subBrowser->GetHost()->SendMouseClickEvent(mouseEvent, type, true, 1);
-      } else if (event == QLatin1String("mousemove")) {
+      } else if (event == "mousemove") {
         subBrowser->GetHost()->SendMouseMoveEvent(mouseEvent, false);
       } else {
-        subBrowser->GetHost()->SendMouseClickEvent(mouseEvent, type, event == QLatin1String("mouseup"), 1);
+        subBrowser->GetHost()->SendMouseClickEvent(mouseEvent, type, event == "mouseup", 1);
       }
     } else {
-      callback->Failure(1, "invalid event type passed to sendEvent: " + event.toStdString());
+      callback->Failure(1, "invalid event type passed to sendEvent: " + event);
       return true;
     }
     callback->Success({});
     return true;
-  } else if (type == QLatin1String("download")) {
-    const auto source = json.value(QStringLiteral("source")).toString();
-    const auto target = json.value(QStringLiteral("target")).toString();
-    const auto  sourceStr = source.toStdString();
-    const auto  targetStr = target.toStdString();
+  } else if (type == "download") {
+    const auto source = json["source"].GetString();
+    const auto target = json["target"].GetString();
+    const std::string  sourceStr = source;
+    const std::string  targetStr = target;
     if(m_downloadTargets.find(sourceStr) != m_downloadTargets.end())
     {
       m_downloadTargets.at(sourceStr) = {targetStr, callback};
