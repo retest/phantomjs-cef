@@ -21,7 +21,7 @@ endforeach()
 
 # Init project variables for PhantomJS-cef.
 project(PhantomJS-cef)
-include_directories(${PROJECT_SOURCE_DIR}/cef)
+include_directories(${PROJECT_SOURCE_DIR}/cef "${PROJECT_SOURCE_DIR}/../rapidjson/include"  )
 
 find_package(Qt5 NO_MODULE REQUIRED COMPONENTS Gui)
 
