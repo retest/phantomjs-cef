@@ -37,7 +37,7 @@
 #include "keyevents.h"
 
 
-
+typedef std::pair<std::string,json11::Json> JSElem;
 
 namespace fs = std::experimental::filesystem;
 namespace {
@@ -279,10 +279,7 @@ json11::Json toJson2(const CefRefPtr<CefDownloadItem>& item)
     {"startTime", item->GetStartTime().GetDoubleT()}
     
   };
-  typedef std::pair<std::string,json11::Json> JSElem;
- 
   
- 
   if (!item->GetSuggestedFileName().empty()) {
      object.insert(JSElem("suggestedFileName",  item->GetSuggestedFileName().ToString()));
     
@@ -498,7 +495,6 @@ void PhantomJSHandler::emitSignal(const CefRefPtr<CefBrowser>& browser, const st
 void PhantomJSHandler::emitSignal(const CefRefPtr<CefBrowser>& browser, const std::string& signal,
                                   const json11::Json::array& arguments, bool internal)
 {
- typedef std::pair<std::string,json11::Json> JSElem;
  
  if ( m_browsers.find(browser->GetIdentifier()) == m_browsers.end() )
   {
@@ -679,6 +675,18 @@ QJsonObject headerMapToJson(const CefRefPtr<T>& r)
   return jsonHeaders;
 }
 
+template<typename T>
+json11::Json::object  headerMapToJson2(const CefRefPtr<T>& r)
+{
+  json11::Json::object  jsonHeaders;
+  CefRequest::HeaderMap headers;
+  r->GetHeaderMap(headers);
+  for (const auto& header : headers) {
+     jsonHeaders.insert(JSElem(header.first.ToString(),  header.second.ToString()));
+  }
+  return jsonHeaders;
+}
+
 CefRequestHandler::ReturnValue PhantomJSHandler::OnBeforeResourceLoad(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
                                                    CefRefPtr<CefRequest> request, CefRefPtr<CefRequestCallback> callback)
 {
@@ -741,15 +749,18 @@ bool PhantomJSHandler::OnResourceResponse(CefRefPtr<CefBrowser> browser, CefRefP
                                           CefRefPtr<CefRequest> request, CefRefPtr<CefResponse> response)
 {
   if (canEmitSignal(browser)) {
-    QJsonObject jsonResponse;
-    jsonResponse[QStringLiteral("status")] = response->GetStatus();
-    jsonResponse[QStringLiteral("statusText")] = QString::fromStdString(response->GetStatusText());
-    jsonResponse[QStringLiteral("contentType")] = QString::fromStdString(response->GetMimeType());
-    jsonResponse[QStringLiteral("headers")] = headerMapToJson(response);
-    jsonResponse[QStringLiteral("url")] = QString::fromStdString(request->GetURL());
-    jsonResponse[QStringLiteral("id")] = QString::number(request->GetIdentifier());
+    json11::Json::object jsonResponse{
+      
+    {"status",response->GetStatus()},
+    {"statusText",response->GetStatusText().ToString()},
+    {"contentType",response->GetMimeType().ToString()},
+    {"headers", headerMapToJson2(response)},
+    {"url",request->GetURL().ToString()},
+    {"id", std::to_string(request->GetIdentifier())}
+    };
+    
     /// TODO: time, stage, bodySize, redirectUrl
-    emitSignal(browser, std::string("onResourceReceived"), {jsonResponse});
+    emitSignal(browser, std::string("onResourceReceived"), json11::Json::array{jsonResponse});
   }
   return false;
 }
