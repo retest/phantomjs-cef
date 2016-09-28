@@ -25,6 +25,17 @@ include_directories(${PROJECT_SOURCE_DIR}/cef "${PROJECT_SOURCE_DIR}/../rapidjso
 
 find_package(Qt5 NO_MODULE REQUIRED COMPONENTS Gui)
 
+#json11 configuration
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+add_library(json11 json11/json11.cpp)
+target_include_directories(json11 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/json11)
+target_compile_options(json11
+  PRIVATE -fno-rtti -fno-exceptions -Wall -Wextra -Werror)
+configure_file("json11/json11.pc.in" "json11.pc" @ONLY)
+
+
 #
 # Source files.
 #
@@ -82,6 +93,7 @@ target_link_libraries(${CEF_TARGET}
   ${CEF_STANDARD_LIBS}
   Qt5::Core
   Qt5::Gui
+  json11
 )
 
 if (OS_WINDOWS)

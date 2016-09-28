@@ -258,6 +258,43 @@ QJsonObject toJson(const CefRefPtr<CefDownloadItem>& item)
   }
   return object;
 }
+
+
+json11::Json toJson2(const CefRefPtr<CefDownloadItem>& item)
+{
+  auto isInProgress = item->IsInProgress();
+  json11::Json::object object= {
+    {"isInProgress",isInProgress},
+    {"isComplete", item->IsComplete()},
+    {"isCanceled", item->IsCanceled()},
+    {"url", item->GetURL().ToString()},
+    {"fullPath", item->GetFullPath().ToString()},
+    {"originalUrl", item->GetOriginalUrl().ToString()},
+    {"mimeType", item->GetMimeType().ToString()},
+    {"contentDisposition", item->GetContentDisposition().ToString()},
+    {"receivedBytes",std::to_string(item->GetTotalBytes())},
+    {"totalBytes", std::to_string(item->GetTotalBytes())},
+    {"currentSpeed", std::to_string(item->GetCurrentSpeed())},
+    {"totalBytes", item->GetPercentComplete()},
+    {"startTime", item->GetStartTime().GetDoubleT()}
+    
+  };
+  typedef std::pair<std::string,json11::Json> JSElem;
+ 
+  
+ 
+  if (!item->GetSuggestedFileName().empty()) {
+     object.insert(JSElem("suggestedFileName",  item->GetSuggestedFileName().ToString()));
+    
+  }
+ 
+  if (item->GetEndTime().GetTimeT()) {
+    // this was always invalid in my tests
+    object.insert(JSElem("endTime",  item->GetEndTime().GetDoubleT()));
+    
+  }
+  return object;
+}
 }
 
 PhantomJSHandler::PhantomJSHandler()
@@ -316,7 +353,7 @@ bool PhantomJSHandler::OnConsoleMessage(CefRefPtr<CefBrowser> browser, const Cef
     QMessageLogger(shortSource.c_str(), line, 0).debug() << message;
   } else {
     emitSignal(browser, std::string("onConsoleMessage"),
-        {QString::fromStdString(message), QString::fromStdString(source), line});
+         json11::Json::array{message.ToString(),source.ToString(), line});
   }
   return true;
 }
@@ -338,7 +375,7 @@ void PhantomJSHandler::OnAfterCreated(CefRefPtr<CefBrowser> browser)
     // we don't open about:blank for popups
     browserInfo.firstLoadFinished = true;
     emitSignal(m_browsers.at(parentBrowser).browser, std::string("onPopupCreated"),
-               {browser->GetIdentifier()}, true);
+                json11::Json::array{browser->GetIdentifier()}, true);
   }
 
 #if CHROME_VERSION_BUILD >= 2526
@@ -432,8 +469,8 @@ void PhantomJSHandler::OnLoadStart(CefRefPtr<CefBrowser> browser, CefRefPtr<CefF
   if (!isMain(frame) || !canEmitSignal(browser) || !m_browsers.at(browser->GetIdentifier()).firstLoadFinished ) {
     return;
   }
-
-  emitSignal(browser, std::string("onLoadStarted"), {QString::fromStdString(frame->GetURL())});
+  std::cout << "OnLoadStart" << std::endl;
+  emitSignal(browser, std::string("onLoadStarted"), json11::Json::array{frame->GetURL().ToString()});
 }
 
 void PhantomJSHandler::emitSignal(const CefRefPtr<CefBrowser>& browser, const std::string& signal,
@@ -457,6 +494,36 @@ void PhantomJSHandler::emitSignal(const CefRefPtr<CefBrowser>& browser, const st
   }
   callback->Success(QJsonDocument(data).toJson().constData());
 }
+
+void PhantomJSHandler::emitSignal(const CefRefPtr<CefBrowser>& browser, const std::string& signal,
+                                  const json11::Json::array& arguments, bool internal)
+{
+ typedef std::pair<std::string,json11::Json> JSElem;
+ 
+ if ( m_browsers.find(browser->GetIdentifier()) == m_browsers.end() )
+  {
+    m_browsers.emplace( browser->GetIdentifier(),PhantomJSHandler::BrowserInfo());
+  }
+  auto callback = m_browsers.at(browser->GetIdentifier()).signalCallback;
+  if (!callback) {
+    //qDebug() << "no signal callback for browser" << browser->GetIdentifier() << signal;
+    return;
+  }
+  
+  json11::Json::object data{
+      {"signal", signal},
+      {"args",arguments},
+  };
+  
+ 
+  if (internal) {
+    data.insert(JSElem("interal", true));
+  }
+  auto str = json11::Json(data).dump();
+  std::cout << str << std::endl;
+  callback->Success(str);
+}
+
 
 bool PhantomJSHandler::canEmitSignal(const CefRefPtr<CefBrowser>& browser) const
 {
@@ -507,7 +574,7 @@ void PhantomJSHandler::handleLoadEnd(CefRefPtr<CefBrowser> browser, int statusCo
   }
 
   if (canEmitSignal(browser)) {
-    emitSignal(browser, std::string("onLoadEnd"), {QString::fromStdString(url), success}, true);
+    emitSignal(browser, std::string("onLoadEnd"), json11::Json::array{url.ToString(), success}, true);
   }
 
   while (auto callback = takeCallback(&m_waitForLoadedCallbacks, browser)) {
@@ -575,18 +642,18 @@ void PhantomJSHandler::OnPaint(CefRefPtr<CefBrowser> browser, PaintElementType t
     }
   }
 
-  QJsonArray jsonDirtyRects;
+  json11::Json::array jsonDirtyRects;
   for (const auto& rect : dirtyRects) {
-    QJsonObject jsonRect = {
-      {QStringLiteral("x"), rect.x},
-      {QStringLiteral("y"), rect.y},
-      {QStringLiteral("width"), rect.width},
-      {QStringLiteral("height"), rect.height}
+     json11::Json::object jsonRect = {
+      {"x", rect.x},
+      {"y", rect.y},
+      {"width", rect.width},
+      {"height", rect.height}
     };
     jsonDirtyRects.push_back(jsonRect);
   }
 
-  emitSignal(browser, std::string("onPaint"), {jsonDirtyRects, width, height, type});
+  emitSignal(browser, std::string("onPaint"),  json11::Json::array{jsonDirtyRects, width, height, type});
 }
 
 void PhantomJSHandler::OnRenderProcessTerminated(CefRefPtr<CefBrowser> browser, TerminationStatus status)
@@ -1131,9 +1198,9 @@ void PhantomJSHandler::OnBeforeDownload(CefRefPtr<CefBrowser> browser, CefRefPtr
     // call back to the user script to ask for a download location
     m_beforeDownloadCallbacks.at(download_item->GetId())= callback;
 
-    emitSignal(browser, std::string("onBeforeDownload"), {
-                QString::number(download_item->GetId()),
-                QString::fromStdString(download_item->GetOriginalUrl())
+    emitSignal(browser, std::string("onBeforeDownload"), json11::Json::array{
+                std::to_string(download_item->GetId()),
+                download_item->GetOriginalUrl().ToString()
               }, true);
     return;
   }
@@ -1156,9 +1223,10 @@ void PhantomJSHandler::OnDownloadUpdated(CefRefPtr<CefBrowser> browser, CefRefPt
   }
   
   const auto jsonDownloadItem = toJson(download_item);
-
+  auto ll =toJson2(download_item);
+  std::cout<< ll.dump();
   emitSignal(browser, std::string("onDownloadUpdated"),
-             {QString::number(download_item->GetId()), jsonDownloadItem}, true);
+              json11::Json::array{std::to_string(download_item->GetId()), ll}, true);
 
   if (!download_item->IsInProgress()) {
     QByteArray data;
