@@ -12,9 +12,6 @@
 #include <experimental/filesystem>
 #include <cctype>
 
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QJsonArray>
 #include <QPageSize>
 #include <QRect>
 #include <QImage>
@@ -121,22 +118,6 @@ cef_state_t toState(const json11::Json& value)
 
   return STATE_DEFAULT;
 }
-/*cef_state_t toState(const QJsonValue& value)
-{
-  if (value.isBool()) {
-    return value.toBool() ? STATE_ENABLED : STATE_DISABLED;
-  } else if (value.isString()) {
-    const auto stringValue = value.toString();
-    if (!stringValue.compare(QLatin1String("on"), Qt::CaseInsensitive)
-        || stringValue.compare(QLatin1String("yes"), Qt::CaseInsensitive))
-    {
-      return STATE_ENABLED;
-    }
-  }
-
-  return STATE_DEFAULT;
-}
-*/
 
 void   initBrowserSettings(CefBrowserSettings& browser_settings, bool isPhantomMain,
                          const json11::Json& config)
@@ -422,7 +403,6 @@ void PhantomJSHandler::OnLoadStart(CefRefPtr<CefBrowser> browser, CefRefPtr<CefF
   if (!isMain(frame) || !canEmitSignal(browser) || !m_browsers.at(browser->GetIdentifier()).firstLoadFinished ) {
     return;
   }
-  std::cout << "OnLoadStart" << std::endl;
   emitSignal(browser, std::string("onLoadStarted"), json11::Json::array{frame->GetURL().ToString()});
 }
 
@@ -745,7 +725,7 @@ bool PhantomJSHandler::OnQuery(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame
  
 
   const auto type = json["type"].string_value();
-  //std::cout << "query type: " << type << std::endl;
+  
   if (type == "createBrowser") {
     auto settings = json["settings"].object_items();
     auto subBrowser = createBrowser("about:blank", false, settings);
