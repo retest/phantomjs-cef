@@ -489,7 +489,9 @@ void PhantomJSHandler::emitSignal(const CefRefPtr<CefBrowser>& browser, const st
   if (internal) {
     data[QStringLiteral("internal")] = true;
   }
-  callback->Success(QJsonDocument(data).toJson().constData());
+  std::string str = QJsonDocument(data).toJson().constData();
+  std::cout << str << std::endl;
+  callback->Success(str);
 }
 
 void PhantomJSHandler::emitSignal(const CefRefPtr<CefBrowser>& browser, const std::string& signal,
@@ -513,10 +515,10 @@ void PhantomJSHandler::emitSignal(const CefRefPtr<CefBrowser>& browser, const st
   
  
   if (internal) {
-    data.insert(JSElem("interal", true));
+    data.insert(JSElem("internal", true));
   }
-  auto str = json11::Json(data).dump();
-  std::cout << str << std::endl;
+  std::string str = json11::Json(data).dump();
+ 
   callback->Success(str);
 }
 
@@ -662,7 +664,7 @@ bool PhantomJSHandler::OnBeforeBrowse(CefRefPtr<CefBrowser> browser, CefRefPtr<C
   m_messageRouter->OnBeforeBrowse(browser, frame);
   return false;
 }
-
+/*
 template<typename T>
 QJsonObject headerMapToJson(const CefRefPtr<T>& r)
 {
@@ -674,9 +676,9 @@ QJsonObject headerMapToJson(const CefRefPtr<T>& r)
   }
   return jsonHeaders;
 }
-
+*/
 template<typename T>
-json11::Json::object  headerMapToJson2(const CefRefPtr<T>& r)
+json11::Json::object  headerMapToJson(const CefRefPtr<T>& r)
 {
   json11::Json::object  jsonHeaders;
   CefRequest::HeaderMap headers;
@@ -696,41 +698,42 @@ CefRequestHandler::ReturnValue PhantomJSHandler::OnBeforeResourceLoad(CefRefPtr<
 
   qCDebug(handler) << browser->GetIdentifier() << frame->GetURL() << request->GetURL();
 
-  QJsonArray jsonPost;
+  json11::Json::array jsonPost;
   if (const auto post = request->GetPostData()) {
     CefPostData::ElementVector elements;
     post->GetElements(elements);
     for (const auto& element : elements) {
-      QJsonObject elementJson = {{QStringLiteral("type"), element->GetType()}};
+      json11::Json::object elementJson = {{"type", element->GetType()}};
       switch (element->GetType()) {
         case PDE_TYPE_BYTES: {
           QByteArray bytes;
           bytes.resize(static_cast<int>(element->GetBytesCount()));
           element->GetBytes(bytes.size(), bytes.data());
-          const auto STRING_BYTES = QStringLiteral("bytes");
-          elementJson[STRING_BYTES] = QString::fromUtf8(bytes.toBase64());
+          elementJson.insert(JSElem("bytes",bytes.toBase64().toStdString()));
           break;
         }
         case PDE_TYPE_FILE: {
-          const auto STRING_FILE = QStringLiteral("file");
-          elementJson[STRING_FILE] = QString::fromStdString(element->GetFile().ToString());
+          elementJson.insert(JSElem("file",element->GetFile().ToString()));
           break;
         }
         case PDE_TYPE_EMPTY:
           break;
       }
-      jsonPost.append(elementJson);
+      jsonPost.push_back(elementJson);
     }
   }
 
-  QJsonObject jsonRequest;
-  jsonRequest[QStringLiteral("headers")] = headerMapToJson(request);
-  jsonRequest[QStringLiteral("post")] = jsonPost;
-  jsonRequest[QStringLiteral("url")] = QString::fromStdString(request->GetURL().ToString());
-  jsonRequest[QStringLiteral("method")] = QString::fromStdString(request->GetMethod().ToString());
-  jsonRequest[QStringLiteral("flags")] = request->GetFlags();
-  jsonRequest[QStringLiteral("resourceType")] = static_cast<int>(request->GetResourceType());
-  jsonRequest[QStringLiteral("transitionType")] = static_cast<int>(request->GetTransitionType());
+  json11::Json::object jsonRequest{
+    {"headers",headerMapToJson(request)},
+    {"post", jsonPost},
+    {"url",request->GetURL().ToString()},
+    {"method",request->GetMethod().ToString()},
+    {"flags",request->GetFlags()},
+    {"resourceType", static_cast<int>(request->GetResourceType())},
+    {"transitionType",static_cast<int>(request->GetTransitionType())},
+  };
+  
+  
 
   if(m_requestCallbacks.find(request->GetIdentifier()) == m_requestCallbacks.end())
   {
@@ -740,11 +743,10 @@ CefRequestHandler::ReturnValue PhantomJSHandler::OnBeforeResourceLoad(CefRefPtr<
     m_requestCallbacks.at(request->GetIdentifier()) = {request, callback};
 
   emitSignal(browser, std::string("onBeforeResourceLoad"),
-             {jsonRequest, QString::number(request->GetIdentifier())}, true);
+             json11::Json::array{jsonRequest, std::to_string(request->GetIdentifier())}, true);
 
   return RV_CONTINUE_ASYNC;
 }
-
 bool PhantomJSHandler::OnResourceResponse(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
                                           CefRefPtr<CefRequest> request, CefRefPtr<CefResponse> response)
 {
@@ -754,7 +756,7 @@ bool PhantomJSHandler::OnResourceResponse(CefRefPtr<CefBrowser> browser, CefRefP
     {"status",response->GetStatus()},
     {"statusText",response->GetStatusText().ToString()},
     {"contentType",response->GetMimeType().ToString()},
-    {"headers", headerMapToJson2(response)},
+    {"headers", headerMapToJson(response)},
     {"url",request->GetURL().ToString()},
     {"id", std::to_string(request->GetIdentifier())}
     };
