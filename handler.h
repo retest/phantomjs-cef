@@ -13,9 +13,6 @@
 #include <QRect>
 #include <QJsonObject>
 
-#define RAPIDJSON_HAS_STDSTRING 1
-#include "rapidjson/rapidjson.h"
-#include "rapidjson/document.h" 
 #include "json11.hpp"
 
 class PhantomJSHandler : public CefClient,
@@ -35,7 +32,7 @@ class PhantomJSHandler : public CefClient,
   static CefMessageRouterConfig messageRouterConfig();
 
   CefRefPtr<CefBrowser> createBrowser(const CefString& url, bool isPhantomMain,
-                                      const rapidjson::Value& config = {});
+                                      const json11::Json& config = {});
 
   // CefClient methods:
   virtual CefRefPtr<CefDisplayHandler> GetDisplayHandler() override
