@@ -10,171 +10,197 @@
 #include <QPageSize>
 
 #include <algorithm>
+#include <locale>
 
-QPageSize::PageSizeId pageSizeIdForName(const QString& name)
+
+static bool compareInsensitive(const std::string& str1,const std::string& str2)
+{
+  
+  std::string str1upper = str1;
+  std::string str2upper = str2;
+  
+  std::transform(str1upper.begin(),str1upper.end(),str1upper.begin(),toupper);
+  std::transform(str2upper.begin(),str2upper.end(),str2upper.begin(),toupper);
+  
+  if (str1upper != str2upper) {
+     return false;
+  }
+  return true;
+}
+
+bool hasEnding (std::string const &fullString, std::string const &ending) {
+    if (fullString.length() >= ending.length()) {
+        return (0 == fullString.compare (fullString.length() - ending.length(), ending.length(), ending));
+    } else {
+        return false;
+    }
+}
+
+
+
+QPageSize::PageSizeId pageSizeIdForName(const std::string& name)
 {
   // NOTE: Must keep in sync with QPageSize::PageSizeId
-  static const QString sizeNames[] = {
+  static const std::string sizeNames[] = {
     // Existing Qt sizes
-    QStringLiteral("A4"),
-    QStringLiteral("B5"),
-    QStringLiteral("Letter"),
-    QStringLiteral("Legal"),
-    QStringLiteral("Executive"),
-    QStringLiteral("A0"),
-    QStringLiteral("A1"),
-    QStringLiteral("A2"),
-    QStringLiteral("A3"),
-    QStringLiteral("A5"),
-    QStringLiteral("A6"),
-    QStringLiteral("A7"),
-    QStringLiteral("A8"),
-    QStringLiteral("A9"),
-    QStringLiteral("B0"),
-    QStringLiteral("B1"),
-    QStringLiteral("B10"),
-    QStringLiteral("B2"),
-    QStringLiteral("B3"),
-    QStringLiteral("B4"),
-    QStringLiteral("B6"),
-    QStringLiteral("B7"),
-    QStringLiteral("B8"),
-    QStringLiteral("B9"),
-    QStringLiteral("C5E"),
-    QStringLiteral("Comm10E"),
-    QStringLiteral("DLE"),
-    QStringLiteral("Folio"),
-    QStringLiteral("Ledger"),
-    QStringLiteral("Tabloid"),
-    QStringLiteral("Custom"),
+    "A4",
+   "B5",
+   "Letter",
+   "Legal",
+   "Executive",
+   "A0",
+   "A1",
+   "A2",
+   "A3",
+   "A5",
+   "A6",
+   "A7",
+   "A8",
+   "A9",
+   "B0",
+   "B1",
+   "B10",
+   "B2",
+   "B3",
+   "B4",
+   "B6",
+   "B7",
+   "B8",
+   "B9",
+   "C5E",
+   "Comm10E",
+   "DLE",
+   "Folio",
+   "Ledger",
+   "Tabloid",
+   "Custom",
 
-    // New values derived from PPD standard
-    QStringLiteral("A10"),
-    QStringLiteral("A3Extra"),
-    QStringLiteral("A4Extra"),
-    QStringLiteral("A4Plus"),
-    QStringLiteral("A4Small"),
-    QStringLiteral("A5Extra"),
-    QStringLiteral("B5Extra"),
+  
+   "A10",
+   "A3Extra",
+   "A4Extra",
+   "A4Plus",
+   "A4Small",
+   "A5Extra",
+   "B5Extra",
 
-    QStringLiteral("JisB0"),
-    QStringLiteral("JisB1"),
-    QStringLiteral("JisB2"),
-    QStringLiteral("JisB3"),
-    QStringLiteral("JisB4"),
-    QStringLiteral("JisB5"),
-    QStringLiteral("JisB6"),
-    QStringLiteral("JisB7"),
-    QStringLiteral("JisB8"),
-    QStringLiteral("JisB9"),
-    QStringLiteral("JisB10"),
+   "JisB0",
+   "JisB1",
+   "JisB2",
+   "JisB3",
+   "JisB4",
+   "JisB5",
+   "JisB6",
+   "JisB7",
+   "JisB8",
+   "JisB9",
+   "JisB10",
+    // AnsiA = QStringLiteral("Letter",
+    // AnsiB = QStringLiteral("Ledger",
+    "AnsiC",
+    "AnsiD",
+    "AnsiE",
+    "LegalExtra",
+    "LetterExtra",
+    "LetterPlus",
+    "LetterSmall",
+    "TabloidExtra",
 
-    // AnsiA = QStringLiteral("Letter"),
-    // AnsiB = QStringLiteral("Ledger"),
-    QStringLiteral("AnsiC"),
-    QStringLiteral("AnsiD"),
-    QStringLiteral("AnsiE"),
-    QStringLiteral("LegalExtra"),
-    QStringLiteral("LetterExtra"),
-    QStringLiteral("LetterPlus"),
-    QStringLiteral("LetterSmall"),
-    QStringLiteral("TabloidExtra"),
+    "ArchA",
+    "ArchB",
+    "ArchC",
+    "ArchD",
+    "ArchE",
 
-    QStringLiteral("ArchA"),
-    QStringLiteral("ArchB"),
-    QStringLiteral("ArchC"),
-    QStringLiteral("ArchD"),
-    QStringLiteral("ArchE"),
+    "Imperial7x9",
+    "Imperial8x10",
+    "Imperial9x11",
+    "Imperial9x12",
+    "Imperial10x11",
+    "Imperial10x13",
+    "Imperial10x14",
+    "Imperial12x11",
+    "Imperial15x11",
 
-    QStringLiteral("Imperial7x9"),
-    QStringLiteral("Imperial8x10"),
-    QStringLiteral("Imperial9x11"),
-    QStringLiteral("Imperial9x12"),
-    QStringLiteral("Imperial10x11"),
-    QStringLiteral("Imperial10x13"),
-    QStringLiteral("Imperial10x14"),
-    QStringLiteral("Imperial12x11"),
-    QStringLiteral("Imperial15x11"),
+    "ExecutiveStandard",
+    "Note",
+    "Quarto",
+    "Statement",
+    "SuperA",
+    "SuperB",
+    "Postcard",
+    "DoublePostcard",
+    "Prc16K",
+    "Prc32K",
+    "Prc32KBig",
 
-    QStringLiteral("ExecutiveStandard"),
-    QStringLiteral("Note"),
-    QStringLiteral("Quarto"),
-    QStringLiteral("Statement"),
-    QStringLiteral("SuperA"),
-    QStringLiteral("SuperB"),
-    QStringLiteral("Postcard"),
-    QStringLiteral("DoublePostcard"),
-    QStringLiteral("Prc16K"),
-    QStringLiteral("Prc32K"),
-    QStringLiteral("Prc32KBig"),
+    "FanFoldUS",
+    "FanFoldGerman",
+    "FanFoldGermanLegal",
 
-    QStringLiteral("FanFoldUS"),
-    QStringLiteral("FanFoldGerman"),
-    QStringLiteral("FanFoldGermanLegal"),
+    "EnvelopeB4",
+    "EnvelopeB5",
+    "EnvelopeB6",
+    "EnvelopeC0",
+    "EnvelopeC1",
+    "EnvelopeC2",
+    "EnvelopeC3",
+    "EnvelopeC4",
+    
+    "EnvelopeC6",
+    "EnvelopeC65",
+    "EnvelopeC7",
+    
 
-    QStringLiteral("EnvelopeB4"),
-    QStringLiteral("EnvelopeB5"),
-    QStringLiteral("EnvelopeB6"),
-    QStringLiteral("EnvelopeC0"),
-    QStringLiteral("EnvelopeC1"),
-    QStringLiteral("EnvelopeC2"),
-    QStringLiteral("EnvelopeC3"),
-    QStringLiteral("EnvelopeC4"),
-    // EnvelopeC5 = QStringLiteral("C5E"),
-    QStringLiteral("EnvelopeC6"),
-    QStringLiteral("EnvelopeC65"),
-    QStringLiteral("EnvelopeC7"),
-    // EnvelopeDL = QStringLiteral("DLE"),
+   "Envelope9",
+   "Envelope11",
+   "Envelope12",
+   "Envelope14",
+   "EnvelopeMonarch",
+   "EnvelopePersonal",
 
-    QStringLiteral("Envelope9"),
-    // Envelope10 = QStringLiteral("Comm10E"),
-    QStringLiteral("Envelope11"),
-    QStringLiteral("Envelope12"),
-    QStringLiteral("Envelope14"),
-    QStringLiteral("EnvelopeMonarch"),
-    QStringLiteral("EnvelopePersonal"),
-
-    QStringLiteral("EnvelopeChou3"),
-    QStringLiteral("EnvelopeChou4"),
-    QStringLiteral("EnvelopeInvite"),
-    QStringLiteral("EnvelopeItalian"),
-    QStringLiteral("EnvelopeKaku2"),
-    QStringLiteral("EnvelopeKaku3"),
-    QStringLiteral("EnvelopePrc1"),
-    QStringLiteral("EnvelopePrc2"),
-    QStringLiteral("EnvelopePrc3"),
-    QStringLiteral("EnvelopePrc4"),
-    QStringLiteral("EnvelopePrc5"),
-    QStringLiteral("EnvelopePrc6"),
-    QStringLiteral("EnvelopePrc7"),
-    QStringLiteral("EnvelopePrc8"),
-    QStringLiteral("EnvelopePrc9"),
-    QStringLiteral("EnvelopePrc10"),
-    QStringLiteral("EnvelopeYou4"),
+   "EnvelopeChou3",
+   "EnvelopeChou4",
+   "EnvelopeInvite",
+   "EnvelopeItalian",
+   "EnvelopeKaku2",
+   "EnvelopeKaku3",
+   "EnvelopePrc1",
+   "EnvelopePrc2",
+   "EnvelopePrc3",
+   "EnvelopePrc4",
+   "EnvelopePrc5",
+   "EnvelopePrc6",
+   "EnvelopePrc7",
+   "EnvelopePrc8",
+   "EnvelopePrc9",
+   "EnvelopePrc10",
+   "EnvelopeYou4",
   };
-  auto it = std::find_if(std::begin(sizeNames), std::end(sizeNames), [name] (const QString& size) {
-    return !name.compare(size, Qt::CaseInsensitive);
+  auto it = std::find_if(std::begin(sizeNames), std::end(sizeNames), [name] (const std::string& size) {
+    return compareInsensitive(name,size);
   });
   if (it != std::end(sizeNames)) {
     return static_cast<QPageSize::PageSizeId>(std::distance(std::begin(sizeNames), it));
   }
 
-  if (!name.compare(QLatin1String("AnsiA"), Qt::CaseInsensitive))
+
+  if(compareInsensitive(name,"AnsiA"))
     return QPageSize::AnsiA;
-  if (!name.compare(QLatin1String("AnsiB"), Qt::CaseInsensitive))
+  if (compareInsensitive(name,"AnsiB"))
     return QPageSize::AnsiB;
-  if (!name.compare(QLatin1String("EnvelopeC5"), Qt::CaseInsensitive))
+  if (compareInsensitive(name,"EnvelopeC5"))
     return QPageSize::EnvelopeC5;
-  if (!name.compare(QLatin1String("EnvelopeDL"), Qt::CaseInsensitive))
+  if (compareInsensitive(name,"EnvelopeDL"))
     return QPageSize::EnvelopeDL;
-  if (!name.compare(QLatin1String("Envelope10"), Qt::CaseInsensitive))
+  if (compareInsensitive(name,"Envelope10"))
     return QPageSize::Envelope10;
 
-  qCWarning(print) << "Unknown page size:" << name.toStdString() << "defaulting to A4.";
+  qCWarning(print) << "Unknown page size:" << name << "defaulting to A4.";
   return QPageSize::A4;
 }
 
-QPageSize pageSizeForName(const QString& name)
+QPageSize pageSizeForName(const std::string& name)
 {
   return QPageSize(pageSizeIdForName(name));
 }
@@ -183,33 +209,35 @@ QPageSize pageSizeForName(const QString& name)
 
 struct UnitConversion
 {
-    UnitConversion(const QLatin1String& unit, float factor)
+    UnitConversion(const std::string& unit, float factor)
         : unit(unit)
         , factor(factor)
     {}
-    QLatin1String unit;
+    std::string unit;
     float factor;
 };
 
-float stringToPointSize(const QString& string)
+float stringToPointSize(const std::string& string)
 {
   static const UnitConversion units[] = {
-    { QLatin1String("mm"), 72.0f / 25.4f },
-    { QLatin1String("cm"), 72.0f / 2.54f },
-    { QLatin1String("in"), 72.0f },
-    { QLatin1String("px"), 72.0f / PHANTOMJS_PDF_DPI },
+    { "mm", 72.0f / 25.4f },
+    { "cm", 72.0f / 2.54f },
+    { "in", 72.0f },
+    { "px", 72.0f / PHANTOMJS_PDF_DPI },
   };
 
   for (uint i = 0; i < sizeof(units) / sizeof(units[0]); ++i) {
-    if (string.endsWith(units[i].unit)) {
-      return string.midRef(0, string.size() - units[i].unit.size()).toFloat()
+    if(hasEnding(string,units[i].unit))
+    {
+      return std::stof(string.substr(0, string.size() - units[i].unit.size()))
               * units[i].factor;
     }
+    
   }
-  return string.toFloat();
+  return std::stof(string);
 }
 
-int stringToMillimeter(const QString& string)
+int stringToMillimeter(const std::string& string)
 {
   return round(stringToPointSize(string) / PHANTOMJS_PDF_DPI * 25.4f);
 }

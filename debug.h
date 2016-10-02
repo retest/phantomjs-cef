@@ -98,10 +98,15 @@ Logger& operator<<(Logger& stream, const char* msg);
 
 
 
-
+#if defined(qCDebug)
 #undef qCDebug
+#endif
+#if defined(qCWarning)
 #undef qCWarning
+#endif
+#if defined(qDebug)
 #undef qDebug
+#endif
 
 #define qCDebug(category) \
     if(category.isDebugEnabled()) Logger(category).debug(std::string(""))

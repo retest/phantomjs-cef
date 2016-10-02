@@ -938,18 +938,18 @@ bool PhantomJSHandler::OnQuery(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame
     CefPdfPrintSettings settings;
     auto paperSize = json["paperSize"].object_items();
     std::string pageOrientation = paperSize["orientation"].string_value(), strlandScape("LANDSCAPE");
-    std::transform(pageOrientation.begin(),pageOrientation.end(),pageOrientation.end(),toupper);
+    std::transform(pageOrientation.begin(),pageOrientation.end(),pageOrientation.begin(),toupper);
     
-    if (pageOrientation != strlandScape) {
+    if (pageOrientation == strlandScape) {
       settings.landscape = true;
     }
     QPageSize pageSize;
     if (paperSize["format"].is_string()) {
       std::string paperSizeFormat = paperSize["format"].string_value();;
-      pageSize = pageSizeForName(QString::fromStdString(paperSizeFormat));
+      pageSize = pageSizeForName(paperSizeFormat);
     } else if (paperSize["width"].is_string() && paperSize["height"].is_string()) {
-      auto width = stringToPointSize(QString::fromStdString(paperSize["width"].string_value()));
-      auto height = stringToPointSize(QString::fromStdString(paperSize["height"].string_value()));
+      auto width = stringToPointSize(paperSize["width"].string_value());
+      auto height = stringToPointSize(paperSize["height"].string_value());
       pageSize = QPageSize(QSize(width, height), QPageSize::Point);
     }
     auto rect = pageSize.rect(QPageSize::Millimeter);
@@ -967,7 +967,7 @@ bool PhantomJSHandler::OnQuery(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame
         settings.margin_type = PDF_PRINT_MARGIN_NONE;
       } else {
         settings.margin_type = PDF_PRINT_MARGIN_CUSTOM;
-        int intMargin = stringToMillimeter(QString::fromStdString(marginString));
+        int intMargin = stringToMillimeter(marginString);
         settings.margin_left = intMargin;
         settings.margin_top = intMargin;
         settings.margin_right = intMargin;

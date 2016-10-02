@@ -10,11 +10,11 @@
 #include "include/cef_version.h"
 
 class QPageSize;
-class QString;
 
-QPageSize pageSizeForName(const QString& name);
-float stringToPointSize(const QString& string);
-int stringToMillimeter(const QString& string);
+
+QPageSize pageSizeForName(const std::string& name);
+float stringToPointSize(const std::string& string);
+int stringToMillimeter(const std::string& string);
 
 template<typename Handler>
 class PdfPrintCallback : public CefPdfPrintCallback
