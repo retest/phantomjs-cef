@@ -284,7 +284,9 @@ bool PhantomJSHandler::OnConsoleMessage(CefRefPtr<CefBrowser> browser, const Cef
     fs::path  filepath = source.ToString();
     
     auto shortSource = fs::absolute(filepath).filename().string();
-    QMessageLogger(shortSource.c_str(), line, 0).debug() << message;
+    LoggingCategory console("phantomjs.console",LoggingCategory::eLogDebug);
+    qCDebug(console) << message;
+    
   } else {
     emitSignal(browser, std::string("onConsoleMessage"),
          json11::Json::array{message.ToString(),source.ToString(), line});

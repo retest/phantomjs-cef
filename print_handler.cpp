@@ -170,7 +170,7 @@ QPageSize::PageSizeId pageSizeIdForName(const QString& name)
   if (!name.compare(QLatin1String("Envelope10"), Qt::CaseInsensitive))
     return QPageSize::Envelope10;
 
-  qCWarning(print) << "Unknown page size:" << name << "defaulting to A4.";
+  qCWarning(print) << "Unknown page size:" << name.toStdString() << "defaulting to A4.";
   return QPageSize::A4;
 }
 
