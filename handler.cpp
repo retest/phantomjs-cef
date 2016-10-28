@@ -11,16 +11,7 @@
 #include <algorithm>
 #include <experimental/filesystem>
 #include <cctype>
-
-#include <QPageSize>
-#include <QRect>
-#include <QImage>
-#include <QBuffer>
-#include <QImageWriter>
-#include <QDateTime>
-
-#include <QMessageLogger>
-#include <QUrl>
+#include <assert.h>
 
 #include "include/base/cef_bind.h"
 #include "include/cef_app.h"
@@ -32,6 +23,7 @@
 
 #include "WindowsKeyboardCodes.h"
 #include "keyevents.h"
+#include "base64.h"
 
 
 typedef std::pair<std::string,json11::Json> JSElem;
@@ -93,7 +85,7 @@ void initWindowInfo(CefWindowInfo& window_info, bool isPhantomMain)
   // CreateWindowEx().
   window_info.SetAsPopup(NULL, "phantomjs");
 #endif
-  if (isPhantomMain || !qEnvironmentVariableIsSet("PHANTOMJS_CEF_SHOW_WINDOW")) {
+  if (isPhantomMain /*|| !qEnvironmentVariableIsSet("PHANTOMJS_CEF_SHOW_WINDOW")*/) {
     window_info.SetAsWindowless(0, true);
   }
 }
@@ -520,7 +512,7 @@ void PhantomJSHandler::OnPaint(CefRefPtr<CefBrowser> browser, PaintElementType t
   }
 
   auto info = takeCallback(&m_paintCallbacks, browser);
-  if (info.callback) {
+  if (info.callback) {/*
     QImage image(reinterpret_cast<const uchar*>(buffer), width, height, QImage::Format_ARGB32);
     if (info.clipRect.isValid()) {
       image = image.copy(info.clipRect);
@@ -552,7 +544,7 @@ void PhantomJSHandler::OnPaint(CefRefPtr<CefBrowser> browser, PaintElementType t
         }
         info.callback->Failure(1, error);
       }
-    }
+    }*/
   }
 
   json11::Json::array jsonDirtyRects;
@@ -609,10 +601,14 @@ CefRequestHandler::ReturnValue PhantomJSHandler::OnBeforeResourceLoad(CefRefPtr<
       json11::Json::object elementJson = {{"type", element->GetType()}};
       switch (element->GetType()) {
         case PDE_TYPE_BYTES: {
-          QByteArray bytes;
-          bytes.resize(static_cast<int>(element->GetBytesCount()));
-          element->GetBytes(bytes.size(), bytes.data());
-          elementJson.insert(JSElem("bytes",bytes.toBase64().toStdString()));
+          unsigned int byteCount = element->GetBytesCount();
+          unsigned char* uBuf = (unsigned char*)::malloc(byteCount);
+          if(uBuf)
+          {
+           element->GetBytes(byteCount, uBuf); 
+          
+           elementJson.insert(JSElem("bytes", base64_encode(uBuf,byteCount)));
+          }
           break;
         }
         case PDE_TYPE_FILE: {
@@ -701,7 +697,7 @@ void PhantomJSHandler::CloseAllBrowsers(bool force_close)
   }
 
   // iterate over list of values to ensure we really close all browsers
-  foreach (const auto& info, m_browsers) {
+  for (const auto& info :  m_browsers) {
     info.second.browser->GetHost()->CloseBrowser(force_close);
   }
 }
@@ -711,8 +707,6 @@ bool PhantomJSHandler::OnQuery(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame
                                CefRefPtr<Callback> callback)
 {
   CEF_REQUIRE_UI_THREAD();
-
-  const auto data = QByteArray(request.ToString().data());
 
   std::string err_str;
   json11::Json json = json11::Json::parse(request.ToString(),err_str);
@@ -824,13 +818,15 @@ bool PhantomJSHandler::OnQuery(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame
   // below, all queries work on a browser
   if (type == "webPageSignals") {
     subBrowserInfo.signalCallback = callback;
-    Q_ASSERT(persistent);
+    assert(persistent);
     return true;
   } else if (type == "openWebPage") {
-    const auto url = QUrl::fromUserInput(json["url"].string_value().c_str(),
+   /* const auto url = QUrl::fromUserInput(json["url"].string_value().c_str(),
                                          json["libraryPath"].string_value().c_str(),
-                                         QUrl::AssumeLocalFile);
-    subBrowser->GetMainFrame()->LoadURL(url.toString().toStdString());
+                                         QUrl::AssumeLocalFile);*/
+    std::string url = json["libraryPath"].string_value();
+    url+=json["url"].string_value();
+    subBrowser->GetMainFrame()->LoadURL(url);
     m_waitForLoadedCallbacks.insert(std::pair<int32, CefRefPtr<CefMessageRouterBrowserSide::Callback> >(subBrowser->GetIdentifier(), callback));
     return true;
   } else if (type == "waitForLoaded") {
@@ -934,7 +930,7 @@ bool PhantomJSHandler::OnQuery(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame
     subBrowser->GetHost()->Invalidate(PET_VIEW);
     return true;
   } else if (type == "printPdf") {
-    const std::string path = json["path"].string_value();
+    /*const std::string path = json["path"].string_value();
     CefPdfPrintSettings settings;
     auto paperSize = json["paperSize"].object_items();
     std::string pageOrientation = paperSize["orientation"].string_value(), strlandScape("LANDSCAPE");
@@ -981,9 +977,9 @@ bool PhantomJSHandler::OnQuery(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame
       settings.margin_right =stringToMillimeter(marginObject["right"].string_value().c_str());
       settings.margin_bottom = stringToMillimeter(marginObject["bottom"].string_value().c_str());
     }
-  /*  qCDebug(print) << paperSize << pageSize.name() << settings.page_height << settings.page_width << "landscape:" << settings.landscape
-                    << "margins:"<< settings.margin_bottom << settings.margin_left << settings.margin_top << settings.margin_right << "margin type:" << settings.margin_type;*/
-    subBrowser->GetHost()->PrintToPDF(path, settings, makePdfPrintCallback([callback] (const CefString& path, bool success) {
+  // qCDebug(print) << paperSize << pageSize.name() << settings.page_height << settings.page_width << "landscape:" << settings.landscape
+                    << "margins:"<< settings.margin_bottom << settings.margin_left << settings.margin_top << settings.margin_right << "margin type:" << settings.margin_type;
+  //  subBrowser->GetHost()->PrintToPDF(path, settings, makePdfPrintCallback([callback] (const CefString& path, bool success) {
       if (success) {
         callback->Success(path);
       } else {
@@ -991,6 +987,8 @@ bool PhantomJSHandler::OnQuery(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame
       }
     }));
     return true;
+  
+    */
   } else if (type == "sendEvent") {
     const std::string event = json["event"].string_value();
     const auto modifiers = json["modifiers"].int_value();
