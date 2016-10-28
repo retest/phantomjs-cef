@@ -47,6 +47,7 @@ set(PHANTOMJS_SRCS
   print_handler.cpp
   main.cpp
   debug.cpp
+  base64.cpp
 )
 
 set(SCRIPT_FILE

@@ -6,14 +6,11 @@
 
 #include "debug.h"
 
-#include <QRect>
-#include <QPageSize>
-
 #include <algorithm>
 #include <locale>
 
 
-static bool compareInsensitive(const std::string& str1,const std::string& str2)
+/*static bool compareInsensitive(const std::string& str1,const std::string& str2)
 {
   
   std::string str1upper = str1;
@@ -26,7 +23,7 @@ static bool compareInsensitive(const std::string& str1,const std::string& str2)
      return false;
   }
   return true;
-}
+}*/
 
 bool hasEnding (std::string const &fullString, std::string const &ending) {
     if (fullString.length() >= ending.length()) {
@@ -36,7 +33,7 @@ bool hasEnding (std::string const &fullString, std::string const &ending) {
     }
 }
 
-
+/*
 
 QPageSize::PageSizeId pageSizeIdForName(const std::string& name)
 {
@@ -204,7 +201,7 @@ QPageSize pageSizeForName(const std::string& name)
 {
   return QPageSize(pageSizeIdForName(name));
 }
-
+*/
 #define PHANTOMJS_PDF_DPI 72.0f
 
 struct UnitConversion
@@ -245,9 +242,9 @@ int stringToMillimeter(const std::string& string)
 CefSize PrintHandler::GetPdfPaperSize(int device_units_per_inch)
 {
   // this is just a default, we configure the size via CefPdfPrintSettings in handler.cpp
-  QPageSize page(QPageSize::A4);
-  auto rect = page.rectPixels(device_units_per_inch);
-  return CefSize(rect.width(), rect.height());
+  /*QPageSize page(QPageSize::A4);
+  auto rect = page.rectPixels(device_units_per_inch);*/
+  return CefSize(2480, 3580);
 }
 
 bool PrintHandler::OnPrintDialog(bool has_selection, CefRefPtr<CefPrintDialogCallback> callback)

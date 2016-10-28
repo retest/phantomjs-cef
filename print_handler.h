@@ -9,10 +9,10 @@
 
 #include "include/cef_version.h"
 
-class QPageSize;
+//class QPageSize;
 
 
-QPageSize pageSizeForName(const std::string& name);
+//QPageSize pageSizeForName(const std::string& name);
 float stringToPointSize(const std::string& string);
 int stringToMillimeter(const std::string& string);
 

@@ -10,10 +10,17 @@
 
 #include <deque>
 #include <map>
-#include <QRect>
-#include <QJsonObject>
 
 #include "json11.hpp"
+
+
+struct Rect{
+  double x;
+  double y;
+  double width;
+  double height;
+  bool isValid() const {return true;} //always Rect is valid
+};
 
 class PhantomJSHandler : public CefClient,
                       public CefDisplayHandler,
@@ -158,7 +165,7 @@ private:
   {
     std::string path;
     std::string format;
-    QRect clipRect;
+    Rect clipRect;
     CefRefPtr<CefMessageRouterBrowserSide::Callback> callback;
   };
   std::map<int32, PaintInfo> m_paintCallbacks;

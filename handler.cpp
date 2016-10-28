@@ -919,12 +919,12 @@ bool PhantomJSHandler::OnQuery(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame
     const std::string path = json["path"].string_value();
     const std::string format = json["format"].string_value();
     auto clipRectJson = json["clipRect"].object_items();
-    const auto clipRect = QRect(
+    const Rect clipRect = {
       clipRectJson["left"].number_value(),
       clipRectJson["top"].number_value(),
       clipRectJson["width"].number_value(),
       clipRectJson["height"].number_value()
-    );
+    };
     if(m_paintCallbacks.find(subBrowserId) == m_paintCallbacks.end())
     {
       m_paintCallbacks.insert(std::pair<int32,PaintInfo>(subBrowserId,{path, format, clipRect, callback}));
