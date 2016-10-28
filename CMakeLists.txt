@@ -23,8 +23,6 @@ endforeach()
 project(PhantomJS-cef)
 include_directories(${PROJECT_SOURCE_DIR}/cef )
 
-find_package(Qt5 NO_MODULE REQUIRED COMPONENTS Gui)
-
 #json11 configuration
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -65,7 +63,7 @@ if (OS_LINUX)
   )
 endif()
 
-qt5_add_resources(PHANTOMJS_SRCS resources.qrc)
+
 
 #
 # Shared configuration.
@@ -87,13 +85,10 @@ set(CEF_TARGET_OUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_BUILD_TYPE}")
 # Executable target.
 add_executable(${CEF_TARGET} ${PHANTOMJS_SRCS})
 add_dependencies(${CEF_TARGET} libcef_dll_wrapper)
-message(STATUS "${_qt5Core_install_prefix}")
 target_link_libraries(${CEF_TARGET}
   libcef_lib
   libcef_dll_wrapper
   ${CEF_STANDARD_LIBS}
-  Qt5::Core
-  Qt5::Gui
   json11
 )
 
@@ -102,20 +97,7 @@ if (OS_WINDOWS)
     if(MSVC14)
       set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wv:18")
     endif()
-    if (CMAKE_BUILD_TYPE STREQUAL "Release")
-      set(d "")
-    else() # Debug build
-      set(d "d")
-    endif()
-    if (NOT EXISTS "${_qt5Core_install_prefix}/lib/qtharfbuzzng${d}.lib")
-      message(FATAL_ERROR "PhantomJS only supports building on Windows against a static Qt configured with -static -static-runtime!")
-    endif()
     target_link_libraries(${CEF_TARGET}
-      "${_qt5Core_install_prefix}/lib/qtharfbuzzng${d}.lib"
-      "${_qt5Core_install_prefix}/lib/qtpcre${d}.lib"
-      "${_qt5Core_install_prefix}/lib/qtfreetype${d}.lib"
-      "${_qt5Core_install_prefix}/lib/Qt5PlatformSupport${d}.lib"
-      "${_qt5Core_install_prefix}/plugins/platforms/qwindows${d}.lib"
       "Ws2_32.lib"
       "Imm32.lib"
       "Winmm.lib"
@@ -123,17 +105,11 @@ if (OS_WINDOWS)
 endif()
 
 if (OS_LINUX)
-  if (EXISTS "${_qt5Core_install_prefix}/plugins/platforms/libqminimal.a")
-    message(STATUS "static Qt build detected")
-
     find_package(ZLIB REQUIRED)
     find_package(PNG REQUIRED)
     find_package(JPEG REQUIRED)
 
     target_link_libraries(${CEF_TARGET}
-      "${_qt5Core_install_prefix}/plugins/platforms/libqminimal.a"
-      "${_qt5Core_install_prefix}/lib/libQt5PlatformSupport.a"
-      Qt5::Gui
       ${CMAKE_DL_LIBS}
       ${ZLIB_LIBRARIES}
       ${PNG_LIBRARIES}
@@ -144,8 +120,6 @@ if (OS_LINUX)
       stdc++fs
     )
 
-    add_definitions("-DIMPORT_STATIC_QT_PLUGIN")
-  endif()
 endif()
 
 if(OS_WINDOWS AND USE_SANDBOX)
