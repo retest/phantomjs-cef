@@ -85,7 +85,7 @@ void initWindowInfo(CefWindowInfo& window_info, bool isPhantomMain)
   // CreateWindowEx().
   window_info.SetAsPopup(NULL, "phantomjs");
 #endif
-  if (isPhantomMain /*|| !qEnvironmentVariableIsSet("PHANTOMJS_CEF_SHOW_WINDOW")*/) {
+  if (true /*|| !qEnvironmentVariableIsSet("PHANTOMJS_CEF_SHOW_WINDOW")*/) {
     window_info.SetAsWindowless(0, true);
   }
 }
@@ -821,12 +821,13 @@ bool PhantomJSHandler::OnQuery(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame
     assert(persistent);
     return true;
   } else if (type == "openWebPage") {
-   /* const auto url = QUrl::fromUserInput(json["url"].string_value().c_str(),
+   /*const auto url = QUrl::fromUserInput(json["url"].string_value().c_str(),
                                          json["libraryPath"].string_value().c_str(),
                                          QUrl::AssumeLocalFile);*/
     std::string url = json["libraryPath"].string_value();
     url+=json["url"].string_value();
-    subBrowser->GetMainFrame()->LoadURL(url);
+    std::cerr << url << std::endl;
+    subBrowser->GetMainFrame()->LoadURL(json["url"].string_value());
     m_waitForLoadedCallbacks.insert(std::pair<int32, CefRefPtr<CefMessageRouterBrowserSide::Callback> >(subBrowser->GetIdentifier(), callback));
     return true;
   } else if (type == "waitForLoaded") {
